@@ -7,6 +7,10 @@ The bot is designed to handle everything from point-based moderation to automate
 
 This a 100% free-to-use, non-profit (solo) Discord bot project by LikerOfTurtles.
 
+# Invite Dopamine
+
+Invite the official, pre-hosted Dopamine (no self-hostibg required): https://top.gg/bot/1411266382380924938
+
 ## Features
 
 ### Moderation & Administration
