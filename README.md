@@ -43,7 +43,7 @@ This a 100% free-to-use, non-profit (solo) Discord bot project by LikerOfTurtles
 
 1. Clone the repository:
 
-```git clone https://github.com/yourusername/dopamine.git```
+```git clone https://github.com/likerofturtles/dopamine.git```
 
 2. Install the required packages:
 
