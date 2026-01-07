@@ -99,3 +99,17 @@ class ParticipantPaginator(discord.ui.View):
         if (self.current_page +1) * self.per_page < len(self.participants):
             self.current_page += 1
             await interaction.response.edit_message(embed=self.get_embed(), view=self)
+
+class BehaviorSelect(discord.ui.Select):
+    def __init__(self, draft: GiveawayDraft):
+        options = [
+            discord.SelectOption(label="All required roles", value="0", description="Participant must have every role listed."),
+            discord.SelectOption(label="One of the required roles", value="1", description="Participant must have at least one role listed.")
+        ]
+
+        super().__init__(placeholder="Choose role requirement behaviour...", options=options)
+
+        async def callback(self, interaction: discord.Interaction):
+            self.draft.required_behavior = int(self.values[0])
+            await interaction.response.send_message("Role requirement behaviour updated successfully!", ephemeral=True)
+
