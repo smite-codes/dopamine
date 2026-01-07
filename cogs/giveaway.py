@@ -35,7 +35,7 @@ class GiveawayEditSelect:
             discord.SelectOption(label="9. Color", value="color", description="Set embed color (Hex or Valid Name).")
         ]
         super().__init__(placeholder="Select a setting to customize...", options=options)
-
+        # TO BE IMPLEMENTED
         async def callback(self, interaction: discord.Interaction):
 
             pass
@@ -112,4 +112,35 @@ class BehaviorSelect(discord.ui.Select):
         async def callback(self, interaction: discord.Interaction):
             self.draft.required_behavior = int(self.values[0])
             await interaction.response.send_message("Role requirement behaviour updated successfully!", ephemeral=True)
+
+class GiveawayPreviewView(discord.ui.View):
+    def __init__(self, cog, draft: GiveawayDraft):
+        super().__init__(timeout=900)
+        self.cog = cog
+        self.draft = draft
+        self.message = Optional[discord.InteractionMessage]
+
+    async def on_timeout(self):
+        if self.message:
+            try:
+                await self.message.edit(view=None)
+            except discord.HTTPException:
+                pass
+
+    @discord.ui.button(label="Start", style=discord.ButtonStyle.green)
+    async def start_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        #TO BE IMPLEMENTED
+        await interaction.response.send_message(embed=discord.Embed(description="Giveaway started successfully!", colour=discord.Colour.green()), ephemeral=True)
+        self.stop()
+
+    @discord.ui.button(label="Edit", style=discord.ButtonStyle.gray)
+    async def edit_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        view = GiveawayEditSelect(self.cog, self.draft, self)
+
+        await interaction.response.send_message(embed=discord.embed(title="Edit Giveaway", description="Select what you want to edit using the dropdown below.", colour=discord.Colour.blue()), view=view, ephemeral=True)
+
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.red)
+    async def cancel_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(embed=discord.Embed(title="Giveaway Creation Cancelled."), view=None)
+        self.stop()
 
