@@ -165,3 +165,45 @@ class WinnerRoleSelectView(discord.ui.View):
         self.add_item(discord.ui.Select(placeholder=f"Select {trait}...", min_values=1, max_values=1))
         self.trait = trait
         self.draft = draft
+
+class GiveawayEditView(discord.ui.View):
+    def __init__(self, cog, draft: GiveawayDraft, parent_view: GiveawayPreviewView):
+        super().__init__()
+        self.cog = cog
+        self.draft = draft
+        self.parent_view = parent_view
+
+        self.select_menu = GiveawayEditSelect()
+        self.add_item(self.select_menu)
+
+        async def handle_selection(self, interaction: discord.Interaction, value: str):
+            if value in ["image", "thumbnail", "color"]:
+                await interaction.response.send_modal(GiveawayVisualsModal(value, self.draft))
+            elif value == "behavior":
+                new_view = discord.ui.View()
+                new_view.add_item(BehaviorSelect(self.draft))
+                await interaction.response.send_message("Change required role behaviour:", view=new_view, ephemeral=True)
+            elif value == "extra":
+                new_view = discord.ui.View()
+                trait = "extra entries role"
+                new_view.add_item(RoleSelectView(trait, self.draft))
+                await interaction.response.send_message("Choose roles which will give extra entries:", view=new_view, ephemeral=True)
+            elif value == "required":
+                new_view = discord.ui.View()
+                trait = "Required Roles"
+                new_view.add_item(RoleSelectView(trait, self.draft))
+                await interaction.response.send_message("Choose required roles to participate:", view=new_view, ephemeral=True)
+            elif value == "winner_role":
+                new_view = discord.ui.View()
+                trait = "Winners' Role"
+                new_view.add_item(WinnerRoleSelectView(trait, self.draft))
+                await interaction.response.send_message("Choose role to be given to winner(s):", view=new_view, ephemeral=True)
+            elif value == "blacklist":
+                new_view = discord.ui.View()
+                trait = "Blacklisted Roles"
+                new_view.add_item(RoleSelectView(trait, self.draft))
+                await interaction.response.send_message("Choose roles that can't participate:", view=new_view, ephemeral=True)
+            elif value == "host":
+                new_view = discord.ui.View()
+                new_view.add_item(MemberSelectView(self.draft))
+                await interaction.response.send_message("Choose the host for this giveaway:", view=new_view, ephemeral=True)
