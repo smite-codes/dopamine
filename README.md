@@ -1,4 +1,4 @@
-
+﻿
 # Dopamine
 
 Dopamine is a feature-rich Discord moderation and utility bot built with a focus on performance and ease of use. Originally designed as a private project to express creativity and give back to the Discord community, it is now open-sourced under the AGPL-3.0 license.
@@ -9,7 +9,7 @@ This a 100% free-to-use, non-profit (solo) Discord bot project by LikerOfTurtles
 
 # Invite Dopamine
 
-Invite the official, pre-hosted Dopamine bot (no self-hosting required): https://top.gg/bot/1411266382380924938
+Invite the official, pre-hosted Dopamine bot (no self-hosting required) by clicking [__here__](https://top.gg/bot/1411266382380924938).
 
 # Features
 
