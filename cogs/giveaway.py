@@ -144,3 +144,10 @@ class GiveawayPreviewView(discord.ui.View):
         await interaction.response.edit_message(embed=discord.Embed(title="Giveaway Creation Cancelled."), view=None)
         self.stop()
 
+class MemberSelectView(discord.ui.View):
+    def __init__(self, draft: GiveawayDraft):
+        super().__init__()
+        self.add_item(discord.ui.Select(placeholder="Select a host...", min_values=1, max_values=1))
+        self.draft = draft
+
+    #TO BE IMPLEMENTED
