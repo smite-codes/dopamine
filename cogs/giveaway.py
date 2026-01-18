@@ -217,68 +217,6 @@ class GiveawayEditView(discord.ui.View):
                 new_view.add_item(MemberSelectView(self.draft))
                 await interaction.response.send_message("Choose the host for this giveaway:", view=new_view, ephemeral=True)
 
-def create_giveaway_embed(self, draft: GiveawayDraft, ended: bool = False):
-    if ended:
-        embed_color = discord.Color.red()
-        title_text = "GIVEAWAY ENDED"
-    else:
-        embed_color = discord.Color.blue()
-        title_text = f"{draft.prize}"
-        if draft.color:
-            try:
-                if draft.color.startswith("#"):
-                    embed_color = discord.Color.from_str(draft.color)
-                else:
-                    embed_color = getattr(discord.Color, draft.color.lower())()
-            except (ValueError, AttributeError):
-                pass
-
-    embed = discord.Embed(
-        title=f"{title_text}",
-        description=f"Click the 🎉 button below to enter this giveaway!\n\n"
-                    f"Winners: **{draft.winners}**"
-                    f"Ends: **<t:{draft.end_time}:R>**",
-        colour=embed_color
-    )
-    if draft.host_id:
-        embed = discord.Embed(
-            title=f"{draft.prize}",
-        description=f"Click the 🎉 button below to enter this giveaway!\n\n"
-                    f"Hosted By: <@{draft.host_id}>\n"
-                    f"Winners: **{draft.winners}**\n"
-                    f"Ends: **<t:{draft.end_time}:R>**",
-        colour=embed_color)
-
-    if draft.required_roles:
-        role_mentions = ", ".join([f"<@&{r}>" for r in draft.required_roles])
-        mode = "all of the following" if draft.required_behavior == 0 else "one of the following"
-        embed.add_field(name="Requirements", value=f"Must have **{mode}**: {role_mentions}", inline=False)
-
-    if draft.image:
-        embed.set_image(url=draft.image)
-    if draft.thumbnail:
-        embed.set_thumbnail(url=draft.thumbnail)
-
-    return embed
-
-async def save_giveaway(self, draft: GiveawayDraft, message_id: int):
-    req_roles = ",".join(map(str, draft.required_roles)) if draft.required_roles else ""
-    black_roles = ",".join(map(str, draft.blacklisted_roles)) if draft.blacklisted_roles else ""
-    extra_roles = ",".join(map(str, draft.extra_entries)) if draft.extra_entries else ""
-
-    giveaway_id = int(discord.utils.utcnow().timestamp())
-
-    async with self.acquire_dv() as db:
-        await db.execute('''
-        INSERT INTO giveaways (
-        guild_id, giveaway_id, channel_id, message_id, prize, winners_count, end_time, host_id, required_roles, req_behaviour, blacklisted_roles, extra_entry_roles, winner_role_id, image_url, thumbnail_url, color, ended
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
-        ''', (
-            draft.guild_id, giveaway_id, draft.channel_id, message_id, draft.prize, draft.winners, draft.end_time, draft.host_id, req_roles, draft.required_behavior, black_roles, extra_roles, draft.winner_role, draft.image, draft.thumbnail, draft.color
-        ))
-        await db.commit()
-    return giveaway_id
-
 class Giveaways(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -441,3 +379,69 @@ class Giveaways(commands.Cog):
         )
         embed.add_field(name="Winners", value=", ".join([f"<@{w}>" for w in winners]), inline=False)
         return embed
+
+    def create_giveaway_embed(self, draft: GiveawayDraft, ended: bool = False):
+        if ended:
+            embed_color = discord.Color.red()
+            title_text = "GIVEAWAY ENDED"
+        else:
+            embed_color = discord.Color.blue()
+            title_text = f"{draft.prize}"
+            if draft.color:
+                try:
+                    if draft.color.startswith("#"):
+                        embed_color = discord.Color.from_str(draft.color)
+                    else:
+                        embed_color = getattr(discord.Color, draft.color.lower())()
+                except (ValueError, AttributeError):
+                    pass
+
+        embed = discord.Embed(
+            title=f"{title_text}",
+            description=f"Click the 🎉 button below to enter this giveaway!\n\n"
+                        f"Winners: **{draft.winners}**"
+                        f"Ends: **<t:{draft.end_time}:R>**",
+            colour=embed_color
+        )
+        if draft.host_id:
+            embed = discord.Embed(
+                title=f"{draft.prize}",
+                description=f"Click the 🎉 button below to enter this giveaway!\n\n"
+                            f"Hosted By: <@{draft.host_id}>\n"
+                            f"Winners: **{draft.winners}**\n"
+                            f"Ends: **<t:{draft.end_time}:R>**",
+                colour=embed_color)
+
+        if draft.required_roles:
+            role_mentions = ", ".join([f"<@&{r}>" for r in draft.required_roles])
+            mode = "all of the following" if draft.required_behavior == 0 else "one of the following"
+            embed.add_field(name="Requirements", value=f"Must have **{mode}**: {role_mentions}", inline=False)
+
+        if draft.image:
+            embed.set_image(url=draft.image)
+        if draft.thumbnail:
+            embed.set_thumbnail(url=draft.thumbnail)
+
+        return embed
+
+    async def save_giveaway(self, draft: GiveawayDraft, message_id: int):
+        req_roles = ",".join(map(str, draft.required_roles)) if draft.required_roles else ""
+        black_roles = ",".join(map(str, draft.blacklisted_roles)) if draft.blacklisted_roles else ""
+        extra_roles = ",".join(map(str, draft.extra_entries)) if draft.extra_entries else ""
+
+        giveaway_id = int(discord.utils.utcnow().timestamp())
+
+        async with self.acquire_dv() as db:
+            await db.execute('''
+                             INSERT INTO giveaways (guild_id, giveaway_id, channel_id, message_id, prize, winners_count,
+                                                    end_time, host_id, required_roles, req_behaviour, blacklisted_roles,
+                                                    extra_entry_roles, winner_role_id, image_url, thumbnail_url, color,
+                                                    ended)
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                             ''', (
+                                 draft.guild_id, giveaway_id, draft.channel_id, message_id, draft.prize, draft.winners,
+                                 draft.end_time, draft.host_id, req_roles, draft.required_behavior, black_roles,
+                                 extra_roles, draft.winner_role, draft.image, draft.thumbnail, draft.color
+                             ))
+            await db.commit()
+        return giveaway_id
