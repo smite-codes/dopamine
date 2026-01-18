@@ -244,3 +244,5 @@ def create_giveaway_embed(self, draft: GiveawayDraft):
         embed.set_image(url=draft.image)
     if draft.thumbnail:
         embed.set_thumbnail(url=draft.thumbnail)
+
+    return embed
