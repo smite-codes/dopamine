@@ -966,7 +966,7 @@ class ImageOnlyModeSelectionView(discord.ui.View):
                 style=discord.ButtonStyle.primary,
                 custom_id=f"select_image_panel_{panel_id}"
             )
-            button.callback = lambda interaction, pid=panel_id: self.select.panel(interaction, pid)
+            button.callback = lambda interaction, pid=panel_id: self.select_panel(interaction, pid)
             self.add_item(button)
 
     async def select_panel(self, interaction: discord.Interaction, panel_id: int):
