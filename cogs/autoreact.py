@@ -55,8 +55,6 @@ class AutoReact(commands.Cog):
     async def cog_load(self):
         """Initialize the autoreact database when cog is loaded"""
         await self.init_ar_db()
-        if not self.autoreact_monitor.is_running():
-            self.autoreact_monitor.start()
         if not self._db_keepalive.is_running():
             self._db_keepalive.start()
         if self._reaction_task is None or self._reaction_task.done():
@@ -738,85 +736,48 @@ class AutoReact(commands.Cog):
 
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
-    @tasks.loop(seconds=3)
-    async def autoreact_monitor(self):
-        """Background task to monitor messages and add reactions"""
-        try:
-            try:
-                db = await self.get_db_connection()
-            except Exception as e:
-                print(f"Error getting database connection in autoreact_monitor: {e}")
-                return
+    @commands.Cog.listener()
+    async def on_message(self, message: discord.Message):
+        if message.author.bot or not message.guild:
+            return
 
-            cursor = await db.execute('''
-                SELECT guild_id,
-                       panel_id,
-                       name,
-                       emoji,
-                       channel_id,
-                       member_whitelist,
-                       image_only_mode,
-                       started_at
-                FROM autoreact_panels 
-                WHERE channel_id IS NOT NULL
-                  AND is_active = 1
-                  AND started_at IS NOT NULL
-            ''')
+        db = await self.get_db_connection()
 
-            active_panels = await cursor.fetchall()
-            await cursor.close()
+        cursor = await db.execute('''
+                                  SELECT panel_id, emoji, member_whitelist, image_only_mode
+                                  FROM autoreact_panels
+                                  WHERE guild_id = ?
+                                    AND channel_id = ?
+                                    AND is_active = 1
+                                  ''', (message.guild.id, message.channel.id))
 
-            if not active_panels:
-                self._active_panel_cache = {}
-                return
+        active_panels = await cursor.fetchall()
 
-            panel_cache: Dict[Tuple[int, int], Dict] = {}
-            for guild_id, panel_id, name, emoji_value, channel_id, member_whitelist, image_only_mode, started_at in active_panels:
-                emojis_list = self.deserialize_emojis(emoji_value)
-                if not emojis_list:
+        if not active_panels:
+            return
+
+        for panel_id, emoji_value, member_whitelist, image_only_mode in active_panels:
+            if image_only_mode:
+                has_images = bool(message.attachments) or any(
+                    embed.type == 'image' for embed in message.embeds
+                )
+                if not has_images:
                     continue
-                panel_cache[(guild_id, panel_id)] = {
-                    "guild_id": guild_id,
-                    "panel_id": panel_id,
-                    "name": name,
-                    "emojis": emojis_list,
-                    "channel_id": channel_id,
-                    "member_whitelist": bool(member_whitelist),
-                    "image_only_mode": bool(image_only_mode),
-                    "started_at": started_at,
-                    "whitelist_users": set(),
-                }
+            if member_whitelist:
+                wl_cursor = await db.execute('''
+                                             SELECT 1
+                                             FROM autoreact_whitelist
+                                             WHERE guild_id = ?
+                                               AND panel_id = ?
+                                               AND user_id = ?
+                                             ''', (message.guild.id, panel_id, message.author.id))
+                is_whitelisted = await wl_cursor.fetchone()
+                if not is_whitelisted:
+                    continue
 
-            whitelist_cursor = await db.execute('''
-                SELECT guild_id, panel_id, user_id
-                FROM autoreact_whitelist
-            ''')
-            whitelist_rows = await whitelist_cursor.fetchall()
-            await whitelist_cursor.close()
-
-            for wl_guild_id, wl_panel_id, user_id in whitelist_rows:
-                key = (wl_guild_id, wl_panel_id)
-                panel = panel_cache.get(key)
-                if panel and panel["member_whitelist"]:
-                    whitelist: Set[int] = panel["whitelist_users"]
-                    whitelist.add(user_id)
-
-            self._active_panel_cache = panel_cache
-
-            channel_panel_map: Dict[Tuple[int, int], List[Dict]] = {}
-            for (guild_id, _panel_id), panel in panel_cache.items():
-                key = (guild_id, panel["channel_id"])
-                channel_panel_map.setdefault(key, []).append(panel)
-
-            tasks = [
-                self._process_channel_panels(guild_id, channel_id, panels)
-                for (guild_id, channel_id), panels in channel_panel_map.items()
-            ]
-            if tasks:
-                await asyncio.gather(*tasks)
-
-        except Exception as e:
-            print(f"Error in autoreact_monitor task: {e}")
+            emojis_list = self.deserialize_emojis(emoji_value)
+            for em in emojis_list:
+                await self._reaction_queue.put((message, em))
 
     async def reaction_processor(self):
         """Background worker that processes queued reactions with rate limiting."""
