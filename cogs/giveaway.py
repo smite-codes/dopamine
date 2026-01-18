@@ -269,3 +269,7 @@ async def save_giveaway(self, draft: GiveawayDraft, message_id: int):
         ))
         await db.commit()
     return giveaway_id
+
+async def end_giveaway():
+    # TO BE IMPLEMENTED
+    pass
