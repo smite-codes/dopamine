@@ -207,3 +207,40 @@ class GiveawayEditView(discord.ui.View):
                 new_view = discord.ui.View()
                 new_view.add_item(MemberSelectView(self.draft))
                 await interaction.response.send_message("Choose the host for this giveaway:", view=new_view, ephemeral=True)
+
+def create_giveaway_embed(self, draft: GiveawayDraft):
+    embed_color = discord.Color.blue()
+    if draft.color:
+        try:
+            if draft.color.startswith("#"):
+                embed_color = discord.Color.from_str(draft.color)
+            else:
+                embed_color = getattr(discord.Color, draft.color.lower())()
+        except (ValueError, AttributeError):
+            pass
+
+    embed = discord.Embed(
+        title=f"{draft.prize}",
+        description=f"Click the 🎉 button below to enter this giveaway!\n\n"
+                    f"Winners: **{draft.winners}**"
+                    f"Ends: **<t:{draft.end_time}:R>**",
+        colour=embed_color
+    )
+    if draft.host_id:
+        embed = discord.Embed(
+            title=f"{draft.prize}",
+        description=f"Click the 🎉 button below to enter this giveaway!\n\n"
+                    f"Hosted By: <@{draft.host_id}>\n"
+                    f"Winners: **{draft.winners}**\n"
+                    f"Ends: **<t:{draft.end_time}:R>**",
+        colour=embed_color)
+
+    if draft.required_roles:
+        role_mentions = ", ".join([f"<@&{r}>" for r in draft.required_roles])
+        mode = "all of the following" if draft.required_behavior == 0 else "one of the following"
+        embed.add_field(name="Requirements", value=f"Must have **{mode}**: {role_mentions}", inline=False)
+
+    if draft.image:
+        embed.set_image(url=draft.image)
+    if draft.thumbnail:
+        embed.set_thumbnail(url=draft.thumbnail)
