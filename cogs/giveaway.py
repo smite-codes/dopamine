@@ -208,19 +208,24 @@ class GiveawayEditView(discord.ui.View):
                 new_view.add_item(MemberSelectView(self.draft))
                 await interaction.response.send_message("Choose the host for this giveaway:", view=new_view, ephemeral=True)
 
-def create_giveaway_embed(self, draft: GiveawayDraft):
-    embed_color = discord.Color.blue()
-    if draft.color:
-        try:
-            if draft.color.startswith("#"):
-                embed_color = discord.Color.from_str(draft.color)
-            else:
-                embed_color = getattr(discord.Color, draft.color.lower())()
-        except (ValueError, AttributeError):
-            pass
+def create_giveaway_embed(self, draft: GiveawayDraft, ended: bool = False):
+    if ended:
+        embed_color = discord.Color.red()
+        title_text = "GIVEAWAY ENDED"
+    else:
+        embed_color = discord.Color.blue()
+        title_text = f"{draft.prize}"
+        if draft.color:
+            try:
+                if draft.color.startswith("#"):
+                    embed_color = discord.Color.from_str(draft.color)
+                else:
+                    embed_color = getattr(discord.Color, draft.color.lower())()
+            except (ValueError, AttributeError):
+                pass
 
     embed = discord.Embed(
-        title=f"{draft.prize}",
+        title=f"{title_text}",
         description=f"Click the 🎉 button below to enter this giveaway!\n\n"
                     f"Winners: **{draft.winners}**"
                     f"Ends: **<t:{draft.end_time}:R>**",
