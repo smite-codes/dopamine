@@ -263,7 +263,7 @@ class Giveaways(commands.Cog):
             await db.execute('''
                 CREATE TABLE IF NOT EXISTS giveaways (
                     guild_id INTEGER,
-                    giveaway_id INTEGER AUTOINCREMENT,
+                    giveaway_id INTEGER,
                     channel_id INTEGER,
                     message_id INTEGER,
                     prize TEXT,
@@ -446,18 +446,19 @@ class Giveaways(commands.Cog):
         black_roles = ",".join(map(str, draft.blacklisted_roles)) if draft.blacklisted_roles else ""
         extra_roles = ",".join(map(str, draft.extra_entries)) if draft.extra_entries else ""
 
+        giveaway_id = int(discord.utils.utcnow().timestamp()) + random.randint(1, 69)
 
         async with self.acquire_db() as db:
-            cursor = await db.execute('''
-                             INSERT INTO giveaways (guild_id, channel_id, message_id, prize, winners_count,
+            await db.execute('''
+                             INSERT INTO giveaways (guild_id, giveaway_id, channel_id, message_id, prize, winners_count,
                                                     end_time, host_id, required_roles, req_behaviour, blacklisted_roles,
                                                     extra_entry_roles, winner_role_id, image_url, thumbnail_url, color,
                                                     ended)
-                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
                              ''', (
-                                 draft.guild_id,draft.channel_id, message_id, draft.prize, draft.winners,
+                                 draft.guild_id, giveaway_id, draft.channel_id, message_id, draft.prize, draft.winners,
                                  draft.end_time, draft.host_id, req_roles, draft.required_behaviour, black_roles,
                                  extra_roles, draft.winner_role, draft.image, draft.thumbnail, draft.color
                              ))
             await db.commit()
-        return cursor.lastrowid
+        return giveaway_id
