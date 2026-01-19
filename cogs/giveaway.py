@@ -31,7 +31,10 @@ class GiveawayDraft:
     color: str = "discord.Color.blue()"
 
 class GiveawayEditSelect(discord.ui.Select):
-    def __init__(self, cog, draft: GiveawayDraft):
+    def __init__(self, cog, draft: GiveawayDraft, parent_view):
+        self.cog = cog
+        self.draft = draft
+        self.parent_view = parent_view
         options = [
             discord.SelectOption(label="1. Giveaway Host", value="host", description="The host name to be shown in the giveaway Embed."),
             discord.SelectOption(label="2. Extra Entries Role", value="extra", description="Roles that will give extra entries. Each role gives +1 entries."),
@@ -46,8 +49,25 @@ class GiveawayEditSelect(discord.ui.Select):
         super().__init__(placeholder="Select a setting to customize...", options=options)
 
     async def callback(self, interaction: discord.Interaction):
-        # TO BE IMPLEMENTED
-        pass
+        value = self.values[0]
+        if value in ["image", "thumbnail", "color"]:
+            await interaction.response.send_modal(GiveawayVisualsModal(value, self.draft))
+
+        elif value == "behavior":
+            view = discord.ui.View()
+            view.add_item(BehaviorSelect(self.draft))
+            await interaction.response.send_message("Choose behavior:", view=view, ephemeral=True)
+
+        elif value == "host":
+            view = MemberSelectView(self.draft)
+            await interaction.response.send_message("Select host:", view=view, ephemeral=True)
+
+        elif value in ["extra", "required", "blacklist", "winner_role"]:
+            # Map values to traits for the RoleSelectView
+            trait_map = {"extra": "Extra Entries", "required": "Required Roles",
+                         "blacklist": "Blacklisted Roles", "winner_role": "Winner Role"}
+            view = RoleSelectView(value, trait_map[value], self.draft)
+            await interaction.response.send_message(f"Select {trait_map[value]}:", view=view, ephemeral=True)
 
 class GiveawayVisualsModal(discord.ui.Modal):
     def __init__(self, trait: str, draft: GiveawayDraft):
@@ -155,25 +175,61 @@ class GiveawayPreviewView(discord.ui.View):
 
 class MemberSelectView(discord.ui.View):
     def __init__(self, draft: GiveawayDraft):
-        super().__init__()
-        self.add_item(discord.ui.Select(placeholder="Select a host...", min_values=1, max_values=1))
+        super().__init__(timeout=300)
         self.draft = draft
+        self.select = discord.ui.UserSelect(placeholder="Pick a host...", min_values=1, max_values=1)
+        self.select.callback = self.callback
+        self.add_item(self.select)
 
-    #TO BE IMPLEMENTED
+    async def callback(self, interaction: discord.Interaction):
+        self.draft.host_id = self.select.values[0].id
+        await interaction.response.send_message(f"Giveaway host updated to {self.select.values[0].mention}", ephemeral=True)
+
 
 class RoleSelectView(discord.ui.View):
-    def __init__(self, trait: str, draft: GiveawayDraft):
-        super().__init__()
-        self.add_item(discord.ui.Select(placeholder=f"Select {trait}...", min_values=1, max_values=20))
-        self.trait = trait
+    def __init__(self, key: str, label: str, draft: GiveawayDraft):
+        super().__init__(timeout=300)
+        self.key = key
         self.draft = draft
+        self.select = discord.ui.RoleSelect(placeholder=f"Pick {label}...", min_values=1, max_values=10)
+        self.select.callback = self.callback
+        self.add_item(self.select)
+
+    async def callback(self, interaction: discord.Interaction):
+        role_ids = [role.id for role in self.select.values]
+        if self.key == "extra":
+            self.draft.extra_entries = role_ids
+        elif self.key == "required":
+            self.draft.required_roles = role_ids
+        elif self.key == "blacklist":
+            self.draft.blacklisted_roles = role_ids
+        elif self.key == "winner_role":
+            self.draft.winner_role = role_ids[0]
+
+        await interaction.response.send_message(f"Updated {self.key} successfully!", ephemeral=True)
+
 
 class WinnerRoleSelectView(discord.ui.View):
-    def __init__(self, trait: str, draft: GiveawayDraft):
-        super().__init__()
-        self.add_item(discord.ui.Select(placeholder=f"Select {trait}...", min_values=1, max_values=1))
-        self.trait = trait
+    def __init__(self, key: str, label: str, draft: GiveawayDraft):
+        super().__init__(timeout=300)
+        self.key = key
         self.draft = draft
+        self.select = discord.ui.RoleSelect(placeholder=f"Pick {label}...", min_values=1, max_values=10)
+        self.select.callback = self.callback
+        self.add_item(self.select)
+
+    async def callback(self, interaction: discord.Interaction):
+        role_ids = [role.id for role in self.select.values]
+        if self.key == "extra":
+            self.draft.extra_entries = role_ids
+        elif self.key == "required":
+            self.draft.required_roles = role_ids
+        elif self.key == "blacklist":
+            self.draft.blacklisted_roles = role_ids
+        elif self.key == "winner_role":
+            self.draft.winner_role = role_ids[0]
+
+        await interaction.response.send_message(f"Updated {self.key} successfully!", ephemeral=True)
 
 class GiveawayEditView(discord.ui.View):
     def __init__(self, cog, draft: GiveawayDraft, parent_view: GiveawayPreviewView):
