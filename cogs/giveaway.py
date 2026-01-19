@@ -22,7 +22,7 @@ class GiveawayDraft:
     end_time: int # Unix timestamp
     host_id: Optional[int] = None
     required_roles: List[int] = None
-    required_behavior: int = 0 # 0 = All, 1 = One
+    required_behaviour: int = 0 # 0 = All, 1 = One
     blacklisted_roles: List[int] = None
     extra_entries: List[int] = None
     winner_role: Optional[int] = None
@@ -44,10 +44,10 @@ class GiveawayEditSelect:
             discord.SelectOption(label="9. Colour", value="color", description="Set embed color (Hex or Valid Name).")
         ]
         super().__init__(placeholder="Select a setting to customize...", options=options)
-        # TO BE IMPLEMENTED
-        async def callback(self, interaction: discord.Interaction):
 
-            pass
+    async def callback(self, interaction: discord.Interaction):
+        # TO BE IMPLEMENTED
+        pass
 
 class GiveawayVisualsModal(discord.ui.Modal):
     def __init__(self, trait: str, draft: GiveawayDraft):
@@ -259,7 +259,7 @@ class Giveaways(commands.Cog):
             await self.db_pool.put(conn)
 
     async def init_db(self):
-        async with self.acquire_db as db:
+        async with self.acquire_db() as db:
             await db.execute('''
                 CREATE TABLE IF NOT EXISTS giveaways (
                     guild_id INTEGER,
@@ -271,7 +271,7 @@ class Giveaways(commands.Cog):
                     end_time INTEGER,
                     host_id INTEGER,
                     required_roles TEXT,
-                    req_behavior INTEGER,
+                    req_behaviour INTEGER,
                     blacklisted_roles TEXT,
                     extra_entry_roles TEXT,
                     winner_role_id INTEGER,
@@ -305,7 +305,7 @@ class Giveaways(commands.Cog):
     @tasks.loop(seconds=10)
     async def check_giveaways(self):
         now = int(datetime.now(timezone.utc).timestamp())
-        async with self.acquire_db as db:
+        async with self.acquire_db() as db:
             async with db.execute(
                 "SELECT giveaway_id, guild_id FROM giveaways WHERE end_time <= ? AND ended = 0",
                 (now,)
@@ -316,8 +316,8 @@ class Giveaways(commands.Cog):
             await self.end_giveaway_logic(giveaway_id, guild_id)
 
     async def end_giveaway_logic(self, giveaway_id: int, guild_id: int):
-        async with self.acquire_db as db:
-            async with db.execute("SELECT * from giveaways WHERE giveaway_id = ? and giveaway_id = ?", (giveaway_id, guild_id)) as cursor:
+        async with self.acquire_db() as db:
+            async with db.execute("SELECT * from giveaways WHERE giveaway_id = ? and guild_id = ?", (giveaway_id, guild_id)) as cursor:
                 g = await cursor.fetchone()
                 if not g: return
 
@@ -336,7 +336,7 @@ class Giveaways(commands.Cog):
         winners = random.sample(pool, winner_count)
 
         await self.mark_as_ended(giveaway_id, guild_id)
-        async with self.acquire_db as db:
+        async with self.acquire_db() as db:
             for w_id in winners:
                 await db.execute("INSERT INTO giveaway_winners (giveaway_id, user_id) VALUES (?, ?)", (giveaway_id, w_id))
                 await db.commit()
@@ -363,7 +363,7 @@ class Giveaways(commands.Cog):
                     pass
 
     async def mark_as_ended(self, giveaway_id: int, guild_id: int):
-        async with self.acquire_db as db:
+        async with self.acquire_db() as db:
             await db.execute("UPDATE giveaways SET ended = 1 WHERE giveaway_id = ? and guild_id = ?", (giveaway_id, guild_id))
             await db.commit()
 
