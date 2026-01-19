@@ -313,9 +313,9 @@ class Giveaways(commands.Cog):
                 to_end = await cursor.fetchall()
 
         for giveaway_id, guild_id in to_end:
-            await self.end_giveaway_logic(giveaway_id, guild_id)
+            await self.end_giveaway(giveaway_id, guild_id)
 
-    async def end_giveaway_logic(self, giveaway_id: int, guild_id: int):
+    async def end_giveaway(self, giveaway_id: int, guild_id: int):
         async with self.acquire_db() as db:
             async with db.execute("SELECT * from giveaways WHERE giveaway_id = ? and guild_id = ?", (giveaway_id, guild_id)) as cursor:
                 g = await cursor.fetchone()
@@ -323,7 +323,24 @@ class Giveaways(commands.Cog):
 
             async with db.execute("SELECT user_id FROM giveaway_participants WHERE giveaway_id =?", (giveaway_id,)) as cursor:
                 rows = await cursor.fetchall()
-                pool = [r[0] for r in rows]
+
+        raw_participants = [r[0] for r in rows]
+        pool = []
+
+        extra_roles_str = g[11]
+        extra_roles_list = [int(r) for r in extra_roles_str.split(',')] if extra_roles_str else []
+
+        guild = self.bot.get_guild(guild_id)
+
+        for user_id in raw_participants:
+            pool.append(user_id)
+
+            if guild and extra_roles_list:
+                member = guild.get_member(user_id)
+                if member:
+                    for role_id in extra_roles_list:
+                        if any(role.id == role_id for role in member.roles):
+                            pool.append(user_id)
 
         if not pool:
             channel = self.bot.get_channel(g[2])
