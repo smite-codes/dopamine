@@ -581,6 +581,8 @@ class Giveaways(commands.Cog):
         if draft.thumbnail:
             embed.set_thumbnail(url=draft.thumbnail)
 
+        embed.set_footer("ID: [Giveaway ID will be generated and shown here once you click start.]")
+
         return embed
 
     async def save_giveaway(self, draft: GiveawayDraft, message_id: int):
