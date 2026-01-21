@@ -111,7 +111,7 @@ class ParticipantPaginator(discord.ui.View):
         total_pages = (len(self.participants) - 1) // self.per_page + 1
 
         embed = discord.Embed(
-            title="Participants for {self.prize}",
+            title=f"👤 Participants for **{self.prize}**",
             description=mentions,
             color=discord.Color.blue()
         )
@@ -314,7 +314,7 @@ class GiveawayJoinView(discord.ui.View):
         except (IndexError, ValueError):
             return await interaction.response.send_message("Uh-oh! I couldn't find the Giveaway ID. Perhaps try again?", ephemeral=True)
 
-        g = self.cog.giveaway_cache.get[giveaway_id]
+        g = self.cog.giveaway_cache.get(giveaway_id)
 
         if not g or g['ended'] == 1:
             return await interaction.response.send_message("Uh-oh! I'm afraid that this giveaway has already ended!", ephemeral=True)
@@ -354,7 +354,7 @@ class GiveawayJoinView(discord.ui.View):
         await interaction.response.send_message(msg, ephemeral=True)
 
     @discord.ui.button(
-        label="Participants",
+        label="👤 Participants",
         style=discord.ButtonStyle.gray,
         custom_id="persistent_giveaway_list"
     )
@@ -365,7 +365,7 @@ class GiveawayJoinView(discord.ui.View):
         async with self.cog.acquire_db() as db:
             async with db.execute(
                 "SELECT user_id FROM giveaway_participants WHERE giveaway_id = ?",
-                    (giveaway_id)
+                    (giveaway_id,)
             ) as cursor:
                 rows = await cursor.fetchall()
 
