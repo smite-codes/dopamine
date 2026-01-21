@@ -544,7 +544,7 @@ class Giveaways(commands.Cog):
             await self.mark_as_ended(giveaway_id, guild_id)
             return
 
-        winner_count = min(len(pool), g['winners_count'])
+        winner_count = min(len(set(pool)), g['winners_count'])
         random.shuffle(pool)
 
         winners = []
