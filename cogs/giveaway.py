@@ -636,6 +636,29 @@ class Giveaways(commands.Cog):
 
         giveaway_id = int(discord.utils.utcnow().timestamp()) + random.randint(1, 69)
 
+        data = {
+            "guild_id": draft.guild_id,
+            "giveaway_id": giveaway_id,
+            "channel_id": draft.channel_id,
+            "message_id": message_id,
+            "prize": draft.prize,
+            "winners_count": draft.winners,
+            "end_time": draft.end_time,
+            "host_id": draft.host_id,
+            "required_roles": req_roles,
+            "req_behaviour": draft.required_behaviour,
+            "blacklisted_roles": black_roles,
+            "extra_entry_roles": extra_roles,
+            "winner_role_id": draft.winner_role,
+            "image_url": draft.image,
+            "thumbnail_url": draft.thumbnail,
+            "color": draft.color,
+            "ended": 0
+        }
+
+        self.giveaway_cache[giveaway_id] = data
+        self.participant_cache[giveaway_id] = set()
+
         async with self.acquire_db() as db:
             await db.execute('''
                              INSERT INTO giveaways (guild_id, giveaway_id, channel_id, message_id, prize, winners_count,
@@ -643,11 +666,7 @@ class Giveaways(commands.Cog):
                                                     extra_entry_roles, winner_role_id, image_url, thumbnail_url, color,
                                                     ended)
                              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
-                             ''', (
-                                 draft.guild_id, giveaway_id, draft.channel_id, message_id, draft.prize, draft.winners,
-                                 draft.end_time, draft.host_id, req_roles, draft.required_behaviour, black_roles,
-                                 extra_roles, draft.winner_role, draft.image, draft.thumbnail, draft.color
-                             ))
+                             ''', tuple(data.values()))
             await db.commit()
         return giveaway_id
 
