@@ -380,13 +380,15 @@ class GiveawayJoinView(discord.ui.View):
 class Giveaways(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.active_giveaways: Dict[int, Dict[int, any]] = {}
+        self.giveaway_cache: Dict[int, dict] = {}
+        self.participant_cache: Dict[int, Set[int]] = {}
         self.db_pool: Optional[asyncio.Queue[aiosqlite.connection]] = None
         self.check_giveaways.start()
 
     async def cog_load(self):
         await self.init_pools()
         await self.init_db()
+        await self.populate_caches()
         self.bot.add_view(GiveawayJoinView(self))
 
     async def cog_unload(self):
@@ -462,6 +464,29 @@ class Giveaways(commands.Cog):
             ''')
 
             await db.commit()
+
+    async def populate_caches(self):
+        self.giveaway_cache.clear()
+        self.participant_cache.clear()
+
+        async with self.acquire_db() as db:
+            async with db.execute("SELECT * FROM giveaways WHERE ended = 0") as cursor:
+                rows = await cursor.fetchall()
+                columns = [column[0] for column in cursor.description]
+                for row in rows:
+                    data = dict(zip(columns, row))
+                    giveaway_id = data["giveaway_id"]
+                    self.giveaway_cache[giveaway_id] = data
+                    self.participant_cache[giveaway_id] = Set()
+
+            if self.giveaway_cache:
+                placeholders = ", ".join(['?'] * len(self.giveaway_cache))
+                query = f"SELECT giveaway_id, user_id FROM giveaway_participants WHERE giveaway_id in ({placeholders})"
+                async with db.execute(query, list(self.giveaway_cache.keys())) as cursor:
+                    participant_rows = await cursor.fetchall()
+                    for giveaway_id, user_id in participant_rows:
+                        if giveaway_id in self.participant_cache:
+                            self.participant_cache[giveaway_id].add(user_id)
 
     @tasks.loop(seconds=10)
     async def check_giveaways(self):
