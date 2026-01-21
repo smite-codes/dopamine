@@ -758,3 +758,23 @@ class Giveaways(commands.Cog):
         )
 
         view.message = await interaction.response.original_response()
+
+    @giveaway.command(name="end", description="End an active giveaway (winners are also picked and mentioned).")
+    @app_commands.describe(giveaway_id="The ID of the giveaway to end.")
+    async def giveaway_end(self, interaction: discord.Interaction, giveaway_id: str):
+        try:
+            giveaway_id = int(giveaway_id)
+        except ValueError:
+            return await interaction.response.send_message("That is not a valid ID!", ephemeral=True)
+
+        if giveaway_id not in self.giveaway_cache:
+            return await interaction.response.send_message("That giveaway is not active or doesn't exist!", ephemeral=True)
+
+        await interaction.response.defer(ephemeral=True)
+
+        await self.end_giveaway(giveaway_id, interaction.guild_id)
+        await interaction.edit_original_response(content=f"Giveaway for **{self.giveaway_cache(giveaway_id)['prize']}** has been ended successfully.", ephemeral=True)
+
+    @giveaway_end.autocomplete("giveaway_id")
+    async def end_autocomplete(self, interaction: discord.Interaction, current: str):
+        return await self.giveaway_autocomplete(interaction, current, magic=True)
