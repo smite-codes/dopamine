@@ -164,6 +164,7 @@ class GiveawayPreviewView(discord.ui.View):
         self.cog = cog
         self.draft = draft
         self.message = Optional[discord.InteractionMessage]
+        self.parent_view.draft = self.draft
 
     async def on_timeout(self):
         if self.message:
@@ -195,6 +196,7 @@ class GiveawayPreviewView(discord.ui.View):
         embed = discord.Embed(description=f"Giveaway started successfully in {channel.mention}!",
                               colour=discord.Colour.green())
         embed.set_footer(text=f"ID: {giveaway_id}")
+        await self.parent_view.message.edit(embed=self.cog.create_giveaway_embed(self.draft))
         await interaction.response.send_message(embed=embed, ephemeral=True)
         self.stop()
 
@@ -482,8 +484,6 @@ class Giveaways(commands.Cog):
 
     async def end_giveaway(self, giveaway_id: int, guild_id: int):
         g = self.giveaway_cache.get(giveaway_id)
-        if g.get('ended') == 1:
-            return
         if not g:
             async with self.acquire_db() as db:
                 async with db.execute("SELECT * FROM giveaways WHERE giveaway_id = ? AND guild_id = ?", (giveaway_id, guild_id)) as cursor:
@@ -491,6 +491,9 @@ class Giveaways(commands.Cog):
                     if rows: return
                     columns = [column[0] for column in cursor.description]
                     g = dict(zip(columns, rows))
+                    self.giveaway_cache[giveaway_id] = g
+        if g.get('ended') == 1:
+            return
 
         await self.mark_as_ended(giveaway_id, guild_id)
 
@@ -527,7 +530,7 @@ class Giveaways(commands.Cog):
             await self.mark_as_ended(giveaway_id, guild_id)
             return
 
-        winner_count = min(len(pool), g['winner_count'])
+        winner_count = min(len(pool), g['winners_count'])
         random.shuffle(pool)
 
         winners = []
