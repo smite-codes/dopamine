@@ -699,6 +699,24 @@ class Giveaways(commands.Cog):
             await db.commit()
         return giveaway_id
 
+    async def giveaway_autocomplete(self, interaction: discord.Interaction, current: str, magic: bool = False):
+        choices = []
+
+        if magic:
+            data_source = sorted(self.giveaway_cache.items())
+        else:
+            async with self.acquire_db() as db:
+                async with db.execute("SELECT giveaway_id, prize FROM giveaways WHERE guild_id = ?", (Interaction.guild_id)) as cursor:
+                    rows = await cursor.fetchall()
+                    data_source = [(row[0], {"prize": row[1]}) for row in rows]
+
+        for i, (giveaway_id, data) in enumerate(data_source, 1):
+            label = f"{i}. {data['prize']: {giveaway_id}}"
+            if current.lower in label.lower():
+                choices.append(app_commands.Choice(name=label, value=str(giveaway_id)))
+
+        return choices[:25]
+
     giveaway = app_commands.Group(name="giveaway", description="Commands for Dopamine's giveaway features.")
 
     @giveaway.command(name="create", description="Start the giveaway creation process.")
