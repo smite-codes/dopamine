@@ -482,6 +482,8 @@ class Giveaways(commands.Cog):
 
     async def end_giveaway(self, giveaway_id: int, guild_id: int):
         g = self.giveaway_cache.get(giveaway_id)
+        if g.get('ended') == 1:
+            return
         if not g:
             async with self.acquire_db() as db:
                 async with db.execute("SELECT * FROM giveaways WHERE giveaway_id = ? AND guild_id = ?", (giveaway_id, guild_id)) as cursor:
@@ -489,6 +491,8 @@ class Giveaways(commands.Cog):
                     if rows: return
                     columns = [column[0] for column in cursor.description]
                     g = dict(zip(columns, rows))
+
+        await self.mark_as_ended(giveaway_id, guild_id)
 
         raw_participants = list(self.participant_cache.get(giveaway_id, set()))
 
@@ -533,11 +537,10 @@ class Giveaways(commands.Cog):
 
             if len(winners) == winner_count:
                 break
-
-        await self.mark_as_ended(giveaway_id, guild_id)
         async with self.acquire_db() as db:
             for winner_id in winners:
-                await db.execute("INSERT INTO giveaway_winners (giveaway_id, user_id) VALUES (?, ?)", (giveaway_id, winner_id))
+                await db.execute("INSERT INTO giveaway_winners (giveaway_id, user_id) VALUES (?, ?)",
+                                 (giveaway_id, winner_id))
                 await db.commit()
 
         guild = self.bot.get_guild(guild_id)
