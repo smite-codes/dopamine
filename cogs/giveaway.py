@@ -359,19 +359,24 @@ class GiveawayJoinView(discord.ui.View):
         custom_id="persistent_giveaway_list"
     )
     async def list_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not interaction.message.embeds:
+            return await interaction.response.send_message("Uh-oh! I'm afraid that the message you interacted with doesn't exist anymore :3", ephemeral=True)
+
         footer_text = interaction.message.embeds[0].footer.text
-        giveaway_id = int(footer_text.split(": ")[1])
 
-        async with self.cog.acquire_db() as db:
-            async with db.execute(
-                "SELECT user_id FROM giveaway_participants WHERE giveaway_id = ?",
-                    (giveaway_id,)
-            ) as cursor:
-                rows = await cursor.fetchall()
+        try:
+            giveaway_id = int(footer_text.split(": ")[1])
+        except (IndexError, ValueError):
+            return await interaction.response.send_message("Uh-oh! I couldn't parse Giveaway ID. Maybe try again?", ephemeral=True)
 
-        participants = [r[0] for r in rows]
-        prize = interaction.message.embeds[0].title
+        participant_set = self.cog.participant_cache.get(giveaway_id, set())
+        participants = list(participant_set)
 
+        prize = self.cog.giveaway_cache.get(giveaway_id)['prize']
+
+        if not participants:
+            return await interaction.response.send_message("There are currently no participants in this giveaway!",
+                                                           ephemeral=True)
         view = ParticipantPaginator(participants, prize)
         await interaction.response.send_message(embed=view.get_embed(), view=view, ephemeral=True)
 
