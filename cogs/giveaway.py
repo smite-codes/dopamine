@@ -475,7 +475,7 @@ class Giveaways(commands.Cog):
                     data = dict(zip(columns, row))
                     giveaway_id = data["giveaway_id"]
                     self.giveaway_cache[giveaway_id] = data
-                    self.participant_cache[giveaway_id] = Set()
+                    self.participant_cache[giveaway_id] = set()
 
             if self.giveaway_cache:
                 placeholders = ", ".join(['?'] * len(self.giveaway_cache))
@@ -489,29 +489,38 @@ class Giveaways(commands.Cog):
     @tasks.loop(seconds=10)
     async def check_giveaways(self):
         now = int(datetime.now(timezone.utc).timestamp())
-        async with self.acquire_db() as db:
-            async with db.execute(
-                "SELECT giveaway_id, guild_id FROM giveaways WHERE end_time <= ? AND ended = 0",
-                (now,)
-            ) as cursor:
-                to_end = await cursor.fetchall()
+
+        to_end = [
+            (g['giveaway_id'], g['guild_id'])
+            for g in self.giveaway_cache.values()
+            if g['end_time'] <= now and g['ended'] == 0
+        ]
 
         for giveaway_id, guild_id in to_end:
             await self.end_giveaway(giveaway_id, guild_id)
 
     async def end_giveaway(self, giveaway_id: int, guild_id: int):
-        async with self.acquire_db() as db:
-            async with db.execute("SELECT * from giveaways WHERE giveaway_id = ? and guild_id = ?", (giveaway_id, guild_id)) as cursor:
-                g = await cursor.fetchone()
-                if not g: return
+        g = self.giveaway_cache.get(giveaway_id)
+        if not g:
+            async with self.acquire_db() as db:
+                async with db.execute("SELECT * FROM giveaways WHERE giveaway_id = ? AND guild_id = ?", (giveaway_id, guild_id)) as cursor:
+                    rows = await cursor.fetchall()
+                    if rows: return
+                    columns = [column[0] for column in cursor.description]
+                    g = dict(zip(columns, rows))
 
-            async with db.execute("SELECT user_id FROM giveaway_participants WHERE giveaway_id =?", (giveaway_id,)) as cursor:
-                rows = await cursor.fetchall()
+        raw_participants = list(self.participant_cache.get(giveaway_id, set()))
 
-        raw_participants = [r[0] for r in rows]
+        if not raw_participants:
+            async with self.acquire_db() as db:
+                async with db.execute("SELECT user_id FROM giveaway_participants WHERE giveaway_id = ?",
+                                      (giveaway_id,)) as cursor:
+                    rows = await cursor.fetchall()
+                    raw_participants = [r[0] for r in rows]
+
         pool = []
 
-        extra_roles_str = g[11]
+        extra_roles_str = g.get('extra_entry_roles', '')
         extra_roles_list = [int(r) for r in extra_roles_str.split(',')] if extra_roles_str else []
 
         guild = self.bot.get_guild(guild_id)
@@ -527,43 +536,49 @@ class Giveaways(commands.Cog):
                             pool.append(user_id)
 
         if not pool:
-            channel = self.bot.get_channel(g[2])
+            channel = self.bot.get_channel(g['channel_id'])
             if channel:
-                await channel.send(embed=discord.Embed(title="Giveaway Ended", description=f"Giveaway for **{g[4]}** ended with no participants.", colour=discord.Colour.red()))
+                await channel.send(embed=discord.Embed(title="Giveaway Ended", description=f"Giveaway for **{g['prize']}** ended with no participants.", colour=discord.Colour.red()))
             await self.mark_as_ended(giveaway_id, guild_id)
             return
 
-        winner_count = min(len(pool), g[5])
-        winners = random.sample(pool, winner_count)
+        winner_count = min(len(pool), g['winner_count'])
+        unique_pool = list(set(pool))
+        weights = [pool.count(uid) for uid in unique_pool]
+        winners = random.choices(unique_pool, weights=weights, k=winner_count)
 
         await self.mark_as_ended(giveaway_id, guild_id)
         async with self.acquire_db() as db:
-            for w_id in winners:
-                await db.execute("INSERT INTO giveaway_winners (giveaway_id, user_id) VALUES (?, ?)", (giveaway_id, w_id))
+            for winner_id in winners:
+                await db.execute("INSERT INTO giveaway_winners (giveaway_id, user_id) VALUES (?, ?)", (giveaway_id, winner_id))
                 await db.commit()
 
         guild = self.bot.get_guild(guild_id)
-        channel = guild.get_channel(g[2]) if guild else None
+        channel = guild.get_channel(g['channel_id']) if guild else None
         if channel:
             try:
-                msg = await channel.fetch_message(g[3])
+                msg = await channel.fetch_message(g['message_id'])
                 embed_embed = self.create_embed_from_db(g, winners=winners)
                 await msg.edit(embed=embed_embed, view=None)
 
                 mention_str = ", ".join([f"<@{w}>" for w in winners])
-                await channel.send (f"Congratulations to: {mention_str} for winning **{g[4]}!**")
+                await channel.send (f"🎉 Congratulations to: {mention_str} for winning **{g['prize']}!**")
 
-                if g[12]:
-                    role = guild.get_role(g[12])
+                winner_role_id = g.get('winner_role_id')
+                if winner_role_id:
+                    role = guild.get_role(winner_role_id)
                     if role:
-                        for w_id in winners:
-                            member = guild.get_member(w_id)
+                        for winner_id in winners:
+                            member = guild.get_member(winner_id)
                             if member: await member.add_roles(role)
 
             except Exception:
                     pass
 
     async def mark_as_ended(self, giveaway_id: int, guild_id: int):
+        if giveaway_id in self.giveaway_cache:
+            self.giveaway_cache[giveaway_id]['ended'] = 1
+
         async with self.acquire_db() as db:
             await db.execute("UPDATE giveaways SET ended = 1 WHERE giveaway_id = ? and guild_id = ?", (giveaway_id, guild_id))
             await db.commit()
