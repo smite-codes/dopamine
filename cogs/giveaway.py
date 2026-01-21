@@ -200,7 +200,8 @@ class GiveawayPreviewView(discord.ui.View):
 
     @discord.ui.button(label="Edit", style=discord.ButtonStyle.gray)
     async def edit_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        view = GiveawayEditSelect(self, self.cog, self.draft)
+        view = discord.ui.View()
+        select = GiveawayEditSelect(cog=self.cog, draft=self.draft, parent_view=self)
         await interaction.response.send_message(embed=discord.Embed(title="Edit Giveaway", description="Select what you want to edit using the dropdown below.", colour=discord.Colour.blue()), view=view, ephemeral=True)
 
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.red)
