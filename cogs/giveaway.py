@@ -534,8 +534,8 @@ class Giveaways(commands.Cog):
                 member = guild.get_member(user_id)
                 if not member:
                     member = guild.fetch_member(user_id)
-                if not member:
-                    pass #how would this even happen? ugh not my problem to worry about
+                if not member: #how would this even happen? ugh not my problem to worry about
+                    pass
                 if member:
                     for role_id in extra_roles_list:
                         if any(role.id == role_id for role in member.roles):
