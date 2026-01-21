@@ -502,7 +502,7 @@ class Giveaways(commands.Cog):
             async with self.acquire_db() as db:
                 async with db.execute("SELECT * FROM giveaways WHERE giveaway_id = ? AND guild_id = ?", (giveaway_id, guild_id)) as cursor:
                     rows = await cursor.fetchall()
-                    if rows: return
+                    if not rows: return
                     columns = [column[0] for column in cursor.description]
                     g = dict(zip(columns, rows))
                     self.giveaway_cache[giveaway_id] = g
@@ -532,6 +532,10 @@ class Giveaways(commands.Cog):
 
             if guild and extra_roles_list:
                 member = guild.get_member(user_id)
+                if not member:
+                    member = guild.fetch_member(user_id)
+                if not member:
+                    pass #how would this even happen? ugh not my problem to worry about
                 if member:
                     for role_id in extra_roles_list:
                         if any(role.id == role_id for role in member.roles):
