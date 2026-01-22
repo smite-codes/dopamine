@@ -177,7 +177,7 @@ class ParticipantPaginator(discord.ui.View):
             else:
                 name = f"Unknown({item['id']})"
 
-            lines.append(f"• **{name}** ({item['entries']} entries)")
+            lines.append(f"• **{name}** (**{item['entries']}** entries)")
 
         mentions = "\n".join(lines) or "No participants yet."
         total_pages = (len(self.processed_participants) - 1) // self.per_page + 1
@@ -188,7 +188,7 @@ class ParticipantPaginator(discord.ui.View):
             description=mentions,
             color=discord.Color.blue()
         )
-        embed.set_footer(text=f"Total Participants: {total_count} | Page {self.current_page + 1}/{total_pages}")
+        embed.set_footer(text=f"Total Participants: {total_count} | Page {self.current_page + 1} of {total_pages}")
         return embed
 
     @discord.ui.button(label="◀️", style=discord.ButtonStyle.gray)
@@ -197,7 +197,7 @@ class ParticipantPaginator(discord.ui.View):
             self.current_page -= 1
             await interaction.response.edit_message(embed=self.get_embed(), view=self)
 
-    @discord.ui.button(label="Go To Page", style=discord.ButtonStyle.blurple)
+    @discord.ui.button(label="Go To Page", style=discord.ButtonStyle.gray)
     async def go_to_page(self, interaction: discord.Interaction, button: discord.ui.Button):
         total_pages = (len(self.processed_participants) - 1) // self.per_page + 1
         await interaction.response.send_modal(GoToPageModal(self.current_page, total_pages, self))
@@ -208,7 +208,7 @@ class ParticipantPaginator(discord.ui.View):
             self.current_page += 1
             await interaction.response.edit_message(embed=self.get_embed(), view=self)
 
-    @discord.ui.button(label="Show User Tags", style=discord.ButtonStyle.gray)
+    @discord.ui.button(label="Show User Tags", style=discord.ButtonStyle.blurple)
     async def toggle_tags(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.show_tags = not self.show_tags
         button.label = "Show Usernames" if self.show_tags else "Show User Tags"
