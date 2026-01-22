@@ -112,6 +112,30 @@ class GiveawayVisualsModal(discord.ui.Modal):
 
         await interaction.response.send_message(f"Updated **{self.trait}** successfully!", ephemeral=True)
 
+class GoToPageModal(discord.ui.Modal):
+    def __init__(self, current_page: int, max_pages: int, parent_view):
+        super().__init__(title="Go to Page")
+        self.parent_view = parent_view
+        self.max_pages = max_pages
+        self.page_input = discord.ui.TextInput(
+            label=f"Enter Page Number (1-{max_pages})",
+            default=str(current_page + 1),
+            min_length=1,
+            max_length=len(str(max_pages))
+        )
+        self.add_item(self.page_input)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            page_num = int(self.page_input.value)
+            if 1 <= page_num <= self.max_pages:
+                self.parent_view.current_page = page_num - 1
+                await interaction.response.edit_message(embed=self.parent_view.get_embed(), view=self.parent_view)
+            else:
+                await interaction.response.send_message(f"Please enter a number between 1 and {self.max_pages}.", ephemeral=True)
+        except ValueError:
+            await interaction.response.send_message("Invalid number entered.", ephemeral=True)
+
 class ParticipantPaginator(discord.ui.View):
     def __init__(self, participants: list, prize: str):
         super().__init__(timeout=120)
