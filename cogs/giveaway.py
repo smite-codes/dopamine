@@ -136,29 +136,59 @@ class GoToPageModal(discord.ui.Modal):
         except ValueError:
             await interaction.response.send_message("Invalid number entered.", ephemeral=True)
 
+
 class ParticipantPaginator(discord.ui.View):
-    def __init__(self, participants: list, prize: str):
+    def __init__(self, bot, participants: list, prize: str, extra_roles: list, guild: discord.Guild):
         super().__init__(timeout=120)
-        self.participants = participants
+        self.bot = bot
         self.prize = prize
+        self.guild = guild
         self.current_page = 0
         self.per_page = 10
+        self.show_tags = False
+
+        # Calculate entries and sort
+        self.processed_participants = self._process_participants(participants, extra_roles)
+
+    def _process_participants(self, participants, extra_roles):
+        data = []
+        for uid in participants:
+            entries = 1
+            member = self.guild.get_member(uid)
+            if member and extra_roles:
+                for role_id in extra_roles:
+                    if any(r.id == role_id for r in member.roles):
+                        entries += 1
+            data.append({'id': uid, 'entries': entries})
+
+        # Sort by entries descending, then by ID (for consistency)
+        return sorted(data, key=lambda x: (x['entries'], x['id']), reverse=True)
 
     def get_embed(self):
         start = self.current_page * self.per_page
         end = start + self.per_page
+        page_list = self.processed_participants[start:end]
 
-        page_list = self.participants[start:end]
-        mentions = "\n".join([f"<@{uid}>" for uid in page_list]) or "No participants yet."
+        lines = []
+        for item in page_list:
+            user = self.bot.get_user(item['id'])
+            if user:
+                name = user.name if self.show_tags else user.display_name
+            else:
+                name = f"Unknown({item['id']})"
 
-        total_pages = (len(self.participants) - 1) // self.per_page + 1
+            lines.append(f"• **{name}** ({item['entries']} entries)")
+
+        mentions = "\n".join(lines) or "No participants yet."
+        total_pages = (len(self.processed_participants) - 1) // self.per_page + 1
+        total_count = len(self.processed_participants)
 
         embed = discord.Embed(
-            title=f"👤 Participants for **{self.prize}**",
+            title=f"<:dopamine:1445805701355012279> Participants for **{self.prize}**",
             description=mentions,
             color=discord.Color.blue()
         )
-        embed.set_footer(text=f"Page {self.current_page + 1}/{total_pages}")
+        embed.set_footer(text=f"Total Participants: {total_count} | Page {self.current_page + 1}/{total_pages}")
         return embed
 
     @discord.ui.button(label="◀️", style=discord.ButtonStyle.gray)
@@ -167,11 +197,22 @@ class ParticipantPaginator(discord.ui.View):
             self.current_page -= 1
             await interaction.response.edit_message(embed=self.get_embed(), view=self)
 
+    @discord.ui.button(label="Go To Page", style=discord.ButtonStyle.blurple)
+    async def go_to_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+        total_pages = (len(self.processed_participants) - 1) // self.per_page + 1
+        await interaction.response.send_modal(GoToPageModal(self.current_page, total_pages, self))
+
     @discord.ui.button(label="▶️", style=discord.ButtonStyle.gray)
     async def next_page(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if (self.current_page +1) * self.per_page < len(self.participants):
+        if (self.current_page + 1) * self.per_page < len(self.processed_participants):
             self.current_page += 1
             await interaction.response.edit_message(embed=self.get_embed(), view=self)
+
+    @discord.ui.button(label="Show User Tags", style=discord.ButtonStyle.gray)
+    async def toggle_tags(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.show_tags = not self.show_tags
+        button.label = "Show Usernames" if self.show_tags else "Show User Tags"
+        await interaction.response.edit_message(embed=self.get_embed(), view=self)
 
 class BehaviorSelect(discord.ui.Select):
     def __init__(self, draft: GiveawayDraft, parent_view):
@@ -389,11 +430,15 @@ class GiveawayJoinView(discord.ui.View):
         participants = list(participant_set)
 
         prize = self.cog.giveaway_cache.get(giveaway_id)['prize']
+        g = self.cog.giveaway_cache.get(giveaway_id)
+        prize = g['prize']
+        extra_roles_str = g.get('extra_entry_roles', '')
+        extra_roles_list = [int(r) for r in extra_roles_str.split(',')] if extra_roles_str else []
 
         if not participants:
             return await interaction.response.send_message("There are currently no participants in this giveaway!",
                                                            ephemeral=True)
-        view = ParticipantPaginator(participants, prize)
+        view = ParticipantPaginator(bot=self.cog.bot, participants=participants, prize=prize, extra_roles=extra_roles_list, guild=interaction.guild)
         await interaction.response.send_message(embed=view.get_embed(), view=view, ephemeral=True)
 
 class DestructiveConfirmationView(discord.ui.View):
