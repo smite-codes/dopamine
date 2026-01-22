@@ -20,6 +20,7 @@ from typing import Optional
 from config import DB_PATH, VDB_PATH, SMDB_PATH, SDB_PATH, ARDB_PATH, MCTDB_PATH, STICKYDB_PATH, TOPDB_PATH, HDDB_PATH, HWDDB_PATH, NOTEDB_PATH
 from utils.checks import mod_check, slash_mod_check, guild_check
 
+from VERSION import bot_version
 
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
@@ -50,8 +51,6 @@ bot = commands.Bot(command_prefix="!!", intents=intents, help_command=None)
 
 bot.guild_cooldowns = {}
 bot.lfg_creators = {}
-
-bot_version = "v3.0.0-beta"
 
 POINTVALUES_CACHE_TTL = 300
 LOG_CHANNEL_CACHE_TTL = 300
