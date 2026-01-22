@@ -374,32 +374,39 @@ class GiveawayJoinView(discord.ui.View):
 
 class DestructiveConfirmationView(discord.ui.View):
     def __init__(self):
-        super().__init__(timeout=60)
+        super().__init__(timeout=30)
         self.value = None
 
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.grey)
     async def no_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.value = False
+        await interaction.response.defer()
         self.stop()
 
     @discord.ui.button(label="Delete Permanently", style=discord.ButtonStyle.red)
     async def yes_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.value = True
+        await interaction.response.defer()
         self.stop()
 
 class ConfirmationView(discord.ui.View):
     def __init__(self):
-        super().__init__(timeout=60)
+        super().__init__(timeout=30)
         self.value = None
 
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.grey)
     async def no_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.value = False
+        await interaction.response.defer()
         self.stop()
 
     @discord.ui.button(label="Confirm", style=discord.ButtonStyle.green)
     async def yes_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.value = True
+        await interaction.response.defer()
+        self.stop()
+
+    async def on_timeout(self):
         self.stop()
 
 class Giveaways(commands.Cog):
@@ -614,10 +621,21 @@ class Giveaways(commands.Cog):
                 winner_role_id = g.get('winner_role_id')
                 if winner_role_id:
                     role = guild.get_role(winner_role_id)
+                    async def chunk_list(self, lst, n):
+                        """Split a list into chunks of size n."""
+                        for i in range(0, len(lst), n):
+                            yield lst[i:i + n]
                     if role:
-                        for winner_id in winners:
-                            member = guild.get_member(winner_id)
-                            if member: await member.add_roles(role)
+                        for chunk in chunk_list(winners, 5):
+                            for member_id in chunk:
+                                member = guild.get_member(member_id)
+                                if member:
+                                    try:
+                                        await member.add_roles(role, reason="Giveaway Winner")
+                                    except discord.HTTPException:
+                                        pass
+
+                            await asyncio.sleep(1.5)
 
             except Exception:
                     pass
@@ -852,3 +870,131 @@ class Giveaways(commands.Cog):
 
             else:
                 await interaction.edit_original_response(embed=discord.Embed(title="Action Canceled", description=f"~~Are you sure you want to delete the giveaway for **{prize}** (ID: {giveaway_id}) permanently?~~", colour=discord.Colour.red()))
+
+    @giveaway.command(name="reroll", description="Reroll a giveaway.")
+    @app_commands.describe(giveaway_id="The ID of the giveaway to reroll.", winners="Number of new winners to pick", preserve_winners="Keep previous winners and just add new ones?")
+    async def giveaway_reroll(self, interaction: discord.Interaction, giveaway_id: int, winners: int = 1, preserve_winners: bool = False):
+        try:
+            giveaway_id = int(giveaway_id)
+        except ValueError:
+            return await interaction.response.send_message("That is not a valid ID!", ephemeral=True)
+
+        await interaction.response.defer()
+
+        async with self.acquire_db() as db:
+            async with db.execute("SELECT prize, winner_role_id, channel_id FROM giveaways WHERE giveaway_id = ?", (giveaway_id,)) as cursor:
+                g = await cursor.fetchone()
+
+            if not g:
+                return await interaction.edit_original_response("Giveaway data not found.", ephemeral=True)
+        view = ConfirmationView(self)
+        await interaction.edit_original_response(embed=discord.Embed(title="Pending Confirmation",
+                                                                    description=(f"Are you sure you want to:\n\n"
+                                                                                f"* Re-roll this giveaway to pick **{winners}** new winners\n"
+                                                                                f"* {'Preserve old winners and their roles' if preserve_winners else f'over-write **{winners}** old winners and remove their winner role'}\n"
+                                                                                f"{f'* Give **{winners}** the winner role' if g[1] else ''}"),
+                                                                    view=view, colour=discord.Colour(0x000000)))
+        await view.wait()
+
+        if view.value is None:
+            await interaction.edit_original_response(embed=discord.Embed(title="Timed Out",
+                                                                         description=(f"~~Are you sure you want to:~~\n\n"
+                                                                                      f"~~* Re-roll this giveaway to pick **{winners}** new winners~~\n"
+                                                                                      f"~~* {'Preserve old winners and their roles' if preserve_winners else f'over-write **{winners}** old winners and remove their winner role'}~~\n"
+                                                                                      f"~~{f'* Give **{winners}** the winner role' if g[1] else ''}~~"),
+                                                                         colour=discord.Colour.red()))
+
+        if view.value is False:
+            await interaction.edit_original_response(embed=discord.Embed(title="Action Canceled",
+                                                                         description=(
+                                                                             f"~~Are you sure you want to:~~\n\n"
+                                                                             f"~~* Re-roll this giveaway to pick **{winners}** new winners~~\n"
+                                                                             f"~~* {'Preserve old winners and their roles' if preserve_winners else f'over-write **{winners}** old winners and remove their winner role'}~~\n"
+                                                                             f"~~{f'* Give **{winners}** the winner role' if g[1] else ''}~~"),
+                                                                         colour=discord.Colour.red()))
+        if view.value is True:
+            async def chunk_list(self, lst, n):
+                """Split a list into chunks of size n."""
+                for i in range(0, len(lst), n):
+                    yield lst[i:i + n]
+
+            async with self.acquire_db() as db:
+                async with db.execute("SELECT user_id FROM giveaway_participants WHERE giveaway_id = ?, guild_id = ?", (giveaway_id, interaction.guild_id)) as cursor:
+                    rows = await cursor.fetchall()
+
+                    pool = [r[0] for r in rows]
+
+                async with db.execute("SELECT user_id FROM giveaway_winners WHERE giveaway_id = ?", (giveaway_id,)) as cursor:
+                    prev_rows = await cursor.fetchall()
+                    if not prev_rows:
+                        return await interaction.edit_original_response("This giveaway hasn't ended yet!", ephemeral=True)
+                    prev_winners = [r[0] for r in prev_rows]
+
+                eligible_pool = [uid for uid in pool if uid not in prev_winners]
+
+                if not eligible_pool:
+                    return await interaction.edit_original_response("No new participants available to pick from!", ephemeral=True)
+
+                new_picks = random.sample(eligible_pool, min(len(eligible_pool), winners))
+
+                if not preserve_winners:
+                    if g[1]:
+                        role = interaction.guild.get_role(g[1])
+                        if not role:
+                            role = interaction.guild.fetch_role(g[1])
+                        if not role:
+                            await interaction.followup_send("I can't find the role to remove from the previous winners!", ephemeral=True)
+                        if role:
+                            for chunk in chunk_list(self, prev_winners, 5):
+                                for old_uid in chunk:
+                                    member = interaction.guild.get_member(old_uid)
+                                    if member and role in member.roles:
+                                        try:
+                                            await member.remove_roles(role, reason="Giveaway Reroll")
+                                        except discord.HTTPException:
+                                            pass
+                                await asyncio.sleep(1.5)
+                    await db.execute("DELETE FROM giveaway_winners WHERE giveaway_id = ?, user_id = ?", (giveaway_id, old_uid))
+
+                for new_uid in new_picks:
+                    await db.execute("INSERT INTO giveaway_winners (giveaway_id, user_id) VALUES (?, ?)", (giveaway_id, new_uid))
+                    if g[1]:
+                        role = interaction.guild.get_role(g[1])
+                        if not role:
+                            role = interaction.guild.fetch_role(g[1])
+                        if not role:
+                            await interaction.followup_send("I can't find the role to give to the winners!", ephemeral=True)
+                        if role:
+                            for chunk in chunk_list(new_picks, 5):
+                                for new_uid in chunk:
+                                    member = interaction.guild.get_member(new_uid)
+                                    if member:
+                                        try:
+                                            await member.add_roles(role, reason="Giveaway Winner")
+                                        except discord.HTTPException:
+                                            pass
+
+                                await asyncio.sleep(1.5)
+
+                await db.commit()
+
+                channel = self.bot.get_channel(g[2])
+                if not channel:
+                    try:
+                        channel = await self.bot.fetch_channel(g[2])
+                    except (discord.Forbidden, discord.NotFound):
+                        return await interaction.response.followup_send(
+                            "I searched far and wide, but I can't find the channel chosen for the giveaway!\n\nEnsure that I have the necessary permissions so that I can announce the new winners.",
+                            ephemeral=True)
+
+                mention_str = ", ".join([f"<@{w}>" for w in new_picks])
+                mode_text = "added to the pool of winners" if preserve_winners else "selected as the new winners"
+                await channel.send (f"🎉 Congratulations to: {mention_str} for being {mode_text} for **{g[0]}**!\n\nThis giveaway has been re-rolled by {interaction.user.mention}")
+
+                await interaction.edit_original_response(embed=discord.Embed(title="Action Confirmed",
+                                                                             description=(
+                                                                                 f"~~Are you sure you want to:~~\n\n"
+                                                                                 f"~~* Re-roll this giveaway to pick **{winners}** new winners~~\n"
+                                                                                 f"~~* {'Preserve old winners and their roles' if preserve_winners else f'over-write **{winners}** old winners and remove their winner role'}~~\n"
+                                                                                 f"~~{f'* Give **{winners}** the winner role' if g[1] else ''}~~"),
+                                                                             colour=discord.Colour.green()))
