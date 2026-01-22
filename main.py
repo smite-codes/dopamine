@@ -51,7 +51,7 @@ bot = commands.Bot(command_prefix="!!", intents=intents, help_command=None)
 bot.guild_cooldowns = {}
 bot.lfg_creators = {}
 
-bot_version = "v2.22.0-beta"
+bot_version = "v3.0.0-beta"
 
 POINTVALUES_CACHE_TTL = 300
 LOG_CHANNEL_CACHE_TTL = 300
