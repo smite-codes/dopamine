@@ -255,14 +255,15 @@ class GiveawayPreviewView(discord.ui.View):
             except (discord.Forbidden, discord.NotFound):
                 return await interaction.response.send_message("I searched far and wide, but I can't find the channel chosen for the giveaway!\n\nEnsure that I have the necessary permissions.", ephemeral=True)
 
-        view = GiveawayJoinView(self.cog)
 
-        msg = await channel.send(embed=embed, view=view)
+        msg = await channel.send(embed=embed)
 
         giveaway_id = await self.cog.save_giveaway(self.draft, msg.id)
 
+        view = GiveawayJoinView(self.cog, giveaway_id)
+
         embed.set_footer(text=f"ID: {giveaway_id}")
-        await msg.edit(embed=embed)
+        await msg.edit(embed=embed, view=view)
 
         embed = discord.Embed(description=f"Giveaway started successfully in {channel.mention}!",
                               colour=discord.Colour.green())
@@ -351,13 +352,18 @@ class WinnerRoleSelectView(discord.ui.View):
 
 
 class GiveawayJoinView(discord.ui.View):
-    def __init__(self, cog):
+    def __init__(self, cog, giveaway_id: int):
         super().__init__(timeout=None)
         self.cog = cog
+        self.giveaway_id = giveaway_id
+        self.update_button_label()
+
+    def update_button_label(self):
+        count = len(self.cog.participant_cache.get(self.giveaway_id, set()))
+        self.join_button.label = f"{count}" if count > 0 else "0"
 
     @discord.ui.button(
         emoji="🎉",
-        label="TOBEIMPLEMENTED",
         style=discord.ui.ButtonStyle.blurple,
         custom_id="persistent_giveaway_join"
     )
@@ -407,6 +413,8 @@ class GiveawayJoinView(discord.ui.View):
                                  (interaction.guild_id, giveaway_id, interaction.user.id))
                 msg = "🎉 You have successfully entered the giveaway!"
             await db.commit()
+
+        await interaction.response.edit_message(view=self)
 
         await interaction.response.send_message(msg, ephemeral=True)
 
@@ -490,7 +498,8 @@ class Giveaways(commands.Cog):
         await self.init_pools()
         await self.init_db()
         await self.populate_caches()
-        self.bot.add_view(GiveawayJoinView(self))
+        for giveaway_id in self.giveaway_cache:
+            self.bot.add_view(GiveawayJoinView(self, giveaway_id))
 
     async def cog_unload(self):
         self.check_giveaways.cancel()
