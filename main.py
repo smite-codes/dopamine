@@ -1356,19 +1356,21 @@ async def fuckoff_slash(interaction: discord.Interaction):
         ephemeral=True
     )
 
-    async def _shutdown():
+    async def shutdown():
+        for extension in list(bot.extensions.keys()):
+            try:
+                await bot.unload_extension(extension)
+                print(f"Unloaded {extension}")
+            except Exception as e:
+                print(f"Failed to unload {extension}: {e}")
+
         for loop in (unban_loop, decay_loop):
             if loop.is_running():
                 loop.stop()
-
-        scheduled = bot.get_cog('ScheduledMessages')
-        if scheduled and scheduled.send_scheduled_messages.is_running():
-            scheduled.send_scheduled_messages.stop()
-
         await close_db_connections()
         await bot.close()
 
-    asyncio.create_task(_shutdown())
+    asyncio.create_task(shutdown())
 
 last_ban_time = {}
 
