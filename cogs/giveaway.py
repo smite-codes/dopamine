@@ -515,7 +515,6 @@ class Giveaways(commands.Cog):
                 conn = await aiosqlite.connect(
                     GDB_PATH,
                     timeout=5,
-                    isolation_level=None,
                 )
                 await conn.execute("PRAGMA busy_timeout=5000")
                 await conn.execute("PRAGMA journal_mode=WAL")
