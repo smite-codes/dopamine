@@ -35,6 +35,7 @@ SSDB_PATH = str(BASE_DIR / "databases" / "slowmode.db")
 NFDB_PATH = str(BASE_DIR / "databases" / "nickname.db")
 TDB_PATH = str(BASE_DIR / "databases" / "timezone.db")
 GDB_PATH = str(BASE_DIR / "databases" / "giveaway.db")
+LDB_PATH = str(BASE_DIR / "databases" / "logging.db")
 
 # Top.gg settings
 TOPGG_API_URL = "https://top.gg/api/bots/{bot_id}/check"
