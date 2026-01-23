@@ -54,6 +54,7 @@ Invite the official, pre-hosted Dopamine bot (no self-hosting required) by click
 ```pip install -r requirements.txt```
 
 3. Add this to a .env file in the root folder:
+
 ```DISCORD_TOKEN=YourTokenHere```
 
 4. Run the bot:
