@@ -780,6 +780,7 @@ async def on_ready():
         traceback.print_exc()
 
     cogs_to_load = [
+        'cogs.points',
         'cogs.temphide',
         'cogs.starboard',
         'cogs.topgg',
@@ -795,6 +796,8 @@ async def on_ready():
         'cogs.battery_monitor',
         'cogs.slowmode',
         'cogs.nickname'
+        'cogs.giveaway',
+        'cogs.welcome'
     ]
 
     for cog in cogs_to_load:
