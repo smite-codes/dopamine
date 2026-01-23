@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from contextlib import asynccontextmanager
 from typing import Optional, Dict, Tuple
 from config import TOPDB_PATH, TOPGG_API_URL, TOPGG_TOKEN
+from config import OVERRIDE_VOTEWALL
 
 TOPGG_BOT_TOKEN = TOPGG_TOKEN
 
@@ -127,6 +128,8 @@ class TopGGVoter(commands.Cog):
 
     async def has_user_voted(self, user_id: int) -> bool:
         """Check if user has voted on top.gg"""
+        if OVERRIDE_VOTEWALL:
+            return True
         try:
             url = TOPGG_API_URL.format(bot_id=self.bot.user.id)
             headers = {"Authorization": TOPGG_BOT_TOKEN}
