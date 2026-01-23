@@ -774,7 +774,6 @@ async def on_ready():
     try:
         await init_core_db()
         await init_values_db()
-        await init_welcome_table()
     except Exception as e:
         print(f"❌ Database init failed: {e}")
         import traceback
@@ -1034,139 +1033,11 @@ async def fuckoff_slash(interaction: discord.Interaction):
     asyncio.create_task(shutdown())
 
 
-async def init_welcome_table():
-    async with get_core_db_pool().acquire() as db:
-        await db.execute("""
-        CREATE TABLE IF NOT EXISTS welcome_channels (
-            guild_id INTEGER PRIMARY KEY,
-            channel_id INTEGER
-        )
-        """)
-        await db.commit()
-
-async def db_set_welcome_channel(guild_id: int, channel_id: int):
-    async with get_core_db_pool().acquire() as db:
-        await db.execute(
-            "INSERT OR REPLACE INTO welcome_channels(guild_id, channel_id) VALUES (?, ?)",
-            (guild_id, channel_id)
-        )
-        await db.commit()
-    welcome_channel_cache[guild_id] = (channel_id, time.time() + WELCOME_CHANNEL_CACHE_TTL)
-
-async def db_get_welcome_channel(guild_id: int):
-    now = time.time()
-    _cleanup_ttl_cache(welcome_channel_cache)
-    cached = welcome_channel_cache.get(guild_id)
-    if cached:
-        channel_id, expires_at = cached
-        if now < expires_at:
-            return channel_id
-        else:
-            welcome_channel_cache.pop(guild_id, None)
-
-    async with get_core_db_pool().acquire() as db:
-        db.row_factory = aiosqlite.Row
-        cursor = await db.execute("SELECT channel_id FROM welcome_channels WHERE guild_id = ?", (guild_id,))
-        row = await cursor.fetchone()
-        await cursor.close()
-        channel_id = row["channel_id"] if row else None
-
-    welcome_channel_cache[guild_id] = (channel_id, now + WELCOME_CHANNEL_CACHE_TTL)
-    return channel_id
-
-async def get_welcome_channel(guild: discord.Guild):
-    channel_id = await db_get_welcome_channel(guild.id)
-    if not channel_id:
-        return None
-    channel = guild.get_channel(channel_id)
-    if channel:
-        return channel
-    try:
-        return await guild.fetch_channel(channel_id)
-    except (discord.NotFound, discord.Forbidden):
-        return None
-
-@bot.tree.command(name="welcome", description="Enable/disable welcome messages or set the target channel.")
-@app_commands.check(slash_mod_check)
-@app_commands.describe(channel="Channel for welcome messages (Leave blank to disable)")
-async def welcome_slash(interaction: discord.Interaction, channel: discord.TextChannel | None = None):
-    if channel:
-        await db_set_welcome_channel(interaction.guild.id, channel.id)
-        embed = discord.Embed(
-            description=f"Welcome messages have been **enabled**, sending them to {channel.mention}.",
-            color=discord.Color(0x337fd5)
-        )
-    else:
-        async with get_core_db_pool().acquire() as db:
-            await db.execute("DELETE FROM welcome_channels WHERE guild_id = ?", (interaction.guild.id,))
-            await db.commit()
-        welcome_channel_cache.pop(interaction.guild.id, None)
-        embed = discord.Embed(
-            description="Welcome messages have been **disabled**.",
-            color=discord.Color(0x337fd5)
-        )
-    await interaction.response.send_message(embed=embed, ephemeral=True)
-
-
-@bot.event
-async def on_member_join(member):
-    rec = await get_pending_perma_for_user_guild(member.guild.id, str(member.id))
-    if rec and rec["unban_pending"] == 1 and rec["applied"] == 0:
-        existing = await db_get_user(str(member.guild.id), str(member.id))
-        new_points = max(existing["points"], 4) if existing else 4
-        await db_create_or_update_user(str(member.guild.id), str(member.id), new_points, None, None)
-        await mark_perma_applied(member.guild.id, str(member.id))
-
-    channel = await get_welcome_channel(member.guild)
-    if channel:
-        await channel.send(f"Welcome to **{member.guild.name}**, {member.mention}!")
-
-
-@bot.event
-async def on_guild_join(guild):
-    embed = discord.Embed(
-        description=(
-            "### Thank you for inviting me!\n\n"
-            "I'm a point-based moderation and utility bot. The moderation system is inspired by the core functionality of the moderation bot in the **teenserv** Discord server ([**__discord.gg/teenserv__**](https://www.discord.gg/teenserv)).\n\n"
-            "**Use `/help` to get started! ^_^**\n\n"
-            "-# [**__Vote__**](https://top.gg/bot/1411266382380924938/vote) • [**__Support Server__**](https://discord.gg/VWDcymz648)"
-        ),
-        color=discord.Color.purple()
-    )
-
-    embed.set_author(
-        name="Dopamine — Advanced point-based Moderation Bot",
-        icon_url=bot.user.display_avatar.url
-    )
-
-    target_channel = None
-    keywords = ["general", "chat", "lounge"]
-    for channel in guild.text_channels:
-        if any(word in channel.name.lower() for word in keywords):
-            if channel.permissions_for(guild.me).send_messages:
-                target_channel = channel
-                break
-
-    if not target_channel:
-        if guild.system_channel and guild.system_channel.permissions_for(guild.me).send_messages:
-            target_channel = guild.system_channel
-
-    if not target_channel:
-        for channel in guild.text_channels:
-            if channel.permissions_for(guild.me).send_messages:
-                target_channel = channel
-                break
-
-    if target_channel:
-        await target_channel.send(embed=embed)
-
-
 if __name__ == "__main__":
     async def main_async():
         try:
             await init_core_db()
             await init_values_db()
-            await init_welcome_table()
         except Exception as e:
             print(f"Error: Initialization failed: {e}")
             return
