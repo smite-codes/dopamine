@@ -449,42 +449,90 @@ class GiveawayJoinView(discord.ui.View):
         view = ParticipantPaginator(bot=self.cog.bot, participants=participants, prize=prize, extra_roles=extra_roles_list, guild=interaction.guild)
         await interaction.response.send_message(embed=view.get_embed(), view=view, ephemeral=True)
 
-class DestructiveConfirmationView(discord.ui.View):
-    def __init__(self):
+
+class DestructiveConfirmationView(discord.ui.LayoutView):
+    def __init__(self, title_text: str, body_text: str, color: discord.Color):
         super().__init__(timeout=30)
         self.value = None
+        self.title_text = title_text
+        self.body_text = body_text
+        self.color = color
+        self.build_layout()
 
-    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.grey)
-    async def no_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        self.value = False
-        await interaction.response.defer()
-        self.stop()
+    def build_layout(self):
+        self.clear_items()
 
-    @discord.ui.button(label="Delete Permanently", style=discord.ButtonStyle.red)
-    async def yes_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        self.value = True
-        await interaction.response.defer()
-        self.stop()
+        container = discord.ui.Container(accent_color=self.color)
 
-class ConfirmationView(discord.ui.View):
-    def __init__(self):
+        container.add_item(discord.ui.Section(content=f"## {self.title_text}"))
+
+        container.add_item(discord.ui.Separator())
+
+        container.add_item(discord.ui.Section(content=self.body_text))
+
+        container.add_item(discord.ui.Separator())
+
+        actions = discord.ui.ActionRow(
+            discord.ui.Button(label="Cancel", style=discord.ButtonStyle.grey, custom_id="cancel_btn"),
+            discord.ui.Button(label="Delete Permanently", style=discord.ButtonStyle.red, custom_id="confirm_btn")
+        )
+        container.add_item(actions)
+
+        self.add_item(container)
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        custom_id = interaction.data.get("custom_id")
+        if custom_id == "confirm_btn":
+            self.value = True
+        elif custom_id == "cancel_btn":
+            self.value = False
+
+        if self.value is not None:
+            self.stop()
+            return True
+        return False
+
+class ConfirmationView(discord.ui.LayoutView):
+    def __init__(self, title_text: str, body_text: str, color: discord.Color):
         super().__init__(timeout=30)
         self.value = None
+        self.title_text = title_text
+        self.body_text = body_text
+        self.color = color
+        self.build_layout()
 
-    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.grey)
-    async def no_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        self.value = False
-        await interaction.response.defer()
-        self.stop()
+    def build_layout(self):
+        self.clear_items()
 
-    @discord.ui.button(label="Confirm", style=discord.ButtonStyle.green)
-    async def yes_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        self.value = True
-        await interaction.response.defer()
-        self.stop()
+        container = discord.ui.Container(accent_color=self.color)
 
-    async def on_timeout(self):
-        self.stop()
+        container.add_item(discord.ui.Section(content=f"## {self.title_text}"))
+
+        container.add_item(discord.ui.Separator())
+
+        container.add_item(discord.ui.Section(content=self.body_text))
+
+        container.add_item(discord.ui.Separator())
+
+        actions = discord.ui.ActionRow(
+            discord.ui.Button(label="Cancel", style=discord.ButtonStyle.grey, custom_id="cancel_btn"),
+            discord.ui.Button(label="Confirm", style=discord.ButtonStyle.red, custom_id="confirm_btn")
+        )
+        container.add_item(actions)
+
+        self.add_item(container)
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        custom_id = interaction.data.get("custom_id")
+        if custom_id == "confirm_btn":
+            self.value = True
+        elif custom_id == "cancel_btn":
+            self.value = False
+
+        if self.value is not None:
+            self.stop()
+            return True
+        return False
 
 class Giveaways(commands.Cog):
     def __init__(self, bot):
@@ -895,20 +943,32 @@ class Giveaways(commands.Cog):
         if giveaway_id not in self.giveaway_cache:
             return await interaction.response.send_message("That giveaway is not active or doesn't exist!", ephemeral=True)
 
-
-        view = ConfirmationView(self)
-        await interaction.response.send_message(embed=discord.Embed(title="Pending Confirmation", description="Are you sure you want to end this giveaway right now and announce the winners?", view=view, colour=discord.Colour(0x000000)))
+        body_content = f"Are you sure you want to end this giveaway right now and announce the winners??"
+        view = ConfirmationView("Pending Confirmation", body_content, discord.Color.from_rgb(0, 0, 0))
+        await interaction.response.send_message(view=view)
         await view.wait()
 
         if view.value is None:
-            await interaction.edit_original_response(embed=discord.Embed(title="Timed Out", description="~~Are you sure you want to end this giveaway right now and announce the winners?~~", colour=discord.Colour.red()))
+            view.title_text = "Timed Out"
+            view.body_text = f"~~{body_content}~~"
+            view.color = discord.Color.red()
+            view.build_layout()
+            await interaction.edit_original_response(view=view)
 
         elif view.value is True:
             await self.end_giveaway(giveaway_id, interaction.guild_id)
-            await interaction.edit_original_response(embed=discord.Embed(title="Action Confirmed", description="~~Are you sure you want to end this giveaway right now and announce the winners?~~", colour=discord.Colour.green()))
+            view.title_text = "Action Confirmed"
+            view.body_text = f"~~{body_content}~~"
+            view.color = discord.Color.green()
+            view.build_layout()
+            await interaction.edit_original_response(view=view)
 
         else:
-            await interaction.edit_original_response(embed=discord.Embed(title="Action Canceled", description="~~Are you sure you want to end this giveaway right now and announce the winners?~~", colour=discord.Colour.red()))
+            view.title_text = "Action Canceled"
+            view.body_text = f"~~{body_content}~~"
+            view.color = discord.Color.red()
+            view.build_layout()
+            await interaction.edit_original_response(view=view)
 
     @giveaway_end.autocomplete("giveaway_id")
     async def end_autocomplete(self, interaction: discord.Interaction, current: str):
@@ -930,12 +990,17 @@ class Giveaways(commands.Cog):
             if not row:
                 return await interaction.response.send_message("Giveaway not found.", ephemeral=True)
 
-            view = DestructiveConfirmationView(self)
-            await interaction.response.send_message(embed=discord.Embed(title="Pending Confirmation", description=f"Are you sure you want to delete the giveaway for **{prize}** (ID: {giveaway_id}) permanently?", view=view, colour=discord.Colour(0x000000)))
+            body_content = f"Are you sure you want to delete the giveaway for **{prize}** (ID: {giveaway_id}) permanently?"
+            view = DestructiveConfirmationView("Pending Confirmation", body_content, discord.Color.from_rgb(0, 0, 0))
+            await interaction.response.send_message(view=view)
             await view.wait()
 
             if view.value is None:
-                await interaction.edit_original_response(embed=discord.Embed(title="Timed Out", description=f"~~Are you sure you want to delete the giveaway for **{prize}** (ID: {giveaway_id}) permanently?~~", colour=discord.Colour.red()))
+                view.title_text = "Timed Out"
+                view.body_text = f"~~{body_content}~~"
+                view.color = discord.Color.red()
+                view.build_layout()
+                await interaction.edit_original_response(view=view)
 
             elif view.value is True:
                 async with self.acquire_db() as db:
@@ -943,10 +1008,22 @@ class Giveaways(commands.Cog):
                     await db.execute("DELETE FROM giveaway_participants WHERE giveaway_id = ?", (giveaway_id,))
                     await db.execute("DELETE FROM giveaway_winners WHERE giveaway_id = ?", (giveaway_id,))
                     await db.commit()
-                await interaction.edit_original_response(embed=discord.Embed(title="Action Confirmed", description=f"~~Are you sure you want to delete the giveaway for **{prize}** (ID: {giveaway_id}) permanently?~~", colour=discord.Colour.green()))
+                    try:
+                        self.giveaway_cache.pop(giveaway_id)
+                    except Exception:
+                        pass
+                view.title_text = "Action Confirmed"
+                view.body_text = f"~~{body_content}~~"
+                view.color = discord.Color.green()
+                view.build_layout()
+                await interaction.edit_original_response(view=view)
 
             else:
-                await interaction.edit_original_response(embed=discord.Embed(title="Action Canceled", description=f"~~Are you sure you want to delete the giveaway for **{prize}** (ID: {giveaway_id}) permanently?~~", colour=discord.Colour.red()))
+                view.title_text = "Action Canceled"
+                view.body_text = f"~~{body_content}~~"
+                view.color = discord.Color.red()
+                view.build_layout()
+                await interaction.edit_original_response(view=view)
 
     @giveaway_delete.autocomplete("giveaway_id")
     async def delete_autocomplete(self, interaction: discord.Interaction, current: str):
@@ -968,32 +1045,30 @@ class Giveaways(commands.Cog):
 
             if not g:
                 return await interaction.edit_original_response("Giveaway data not found.", ephemeral=True)
-        view = ConfirmationView(self)
-        await interaction.edit_original_response(embed=discord.Embed(title="Pending Confirmation",
-                                                                    description=(f"Are you sure you want to:\n\n"
-                                                                                f"* Re-roll this giveaway to pick **{winners}** new winners\n"
-                                                                                f"* {'Preserve old winners and their roles' if preserve_winners else f'over-write **{winners}** old winners and remove their winner role'}\n"
-                                                                                f"{f'* Give **{winners}** the winner role' if g[1] else ''}"),
-                                                                    view=view, colour=discord.Colour(0x000000)))
+
+        body_content = (f"Are you sure you want to:\n\n"
+                        f"* Re-roll this giveaway to pick **{winners}** new winners\n"
+                        f"* {'Preserve old winners and their roles' if preserve_winners else f'over-write **{winners}** old winners and remove their winner role'}\n"
+                        f"{f'* Give **{winners}** the winner role' if g[1] else ''}")
+
+        view = ConfirmationView("Pending Confirmation", body_content, discord.Color.from_rgb(0, 0, 0))
+        await interaction.response.send_message(view=view)
         await view.wait()
 
         if view.value is None:
-            await interaction.edit_original_response(embed=discord.Embed(title="Timed Out",
-                                                                         description=(f"~~Are you sure you want to:~~\n\n"
-                                                                                      f"~~* Re-roll this giveaway to pick **{winners}** new winners~~\n"
-                                                                                      f"~~* {'Preserve old winners and their roles' if preserve_winners else f'over-write **{winners}** old winners and remove their winner role'}~~\n"
-                                                                                      f"~~{f'* Give **{winners}** the winner role' if g[1] else ''}~~"),
-                                                                         colour=discord.Colour.red()))
+            view.title_text = "Timed Out"
+            view.body_text = f"~~{body_content}~~"
+            view.color = discord.Color.red()
+            view.build_layout()
+            await interaction.edit_original_response(view=view)
 
         if view.value is False:
-            await interaction.edit_original_response(embed=discord.Embed(title="Action Canceled",
-                                                                         description=(
-                                                                             f"~~Are you sure you want to:~~\n\n"
-                                                                             f"~~* Re-roll this giveaway to pick **{winners}** new winners~~\n"
-                                                                             f"~~* {'Preserve old winners and their roles' if preserve_winners else f'over-write **{winners}** old winners and remove their winner role'}~~\n"
-                                                                             f"~~{f'* Give **{winners}** the winner role' if g[1] else ''}~~"),
-                                                                         colour=discord.Colour.red()))
-        if view.value is True:
+            view.title_text = "Action Canceled"
+            view.body_text = f"~~{body_content}~~"
+            view.color = discord.Color.red()
+            view.build_layout()
+            await interaction.edit_original_response(view=view)
+        else:
             async def chunk_list(self, lst, n):
                 """Split a list into chunks of size n."""
                 for i in range(0, len(lst), n):
@@ -1072,13 +1147,11 @@ class Giveaways(commands.Cog):
                 mode_text = "added to the pool of winners" if preserve_winners else "selected as the new winners"
                 await channel.send (f"🎉 Congratulations to: {mention_str} for being {mode_text} for **{g[0]}**!\n\nThis giveaway has been re-rolled by {interaction.user.mention}")
 
-                await interaction.edit_original_response(embed=discord.Embed(title="Action Confirmed",
-                                                                             description=(
-                                                                                 f"~~Are you sure you want to:~~\n\n"
-                                                                                 f"~~* Re-roll this giveaway to pick **{winners}** new winners~~\n"
-                                                                                 f"~~* {'Preserve old winners and their roles' if preserve_winners else f'over-write **{winners}** old winners and remove their winner role'}~~\n"
-                                                                                 f"~~{f'* Give **{winners}** the winner role' if g[1] else ''}~~"),
-                                                                             colour=discord.Colour.green()))
+                view.title_text = "Action Confirmed"
+                view.body_text = f"~~{body_content}~~"
+                view.color = discord.Color.green()
+                view.build_layout()
+                await interaction.edit_original_response(view=view)
 
     @giveaway_reroll.autocomplete("giveaway_id")
     async def reroll_autocomplete(self, interaction: discord.Interaction, current: str):
