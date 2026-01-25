@@ -570,3 +570,6 @@ class Points(commands.Cog):
         thresholds = self.threshold_cache.get(interaction.guild.id, [0] * 12)
         embed = build_pointvalues_embed(interaction.guild.name, thresholds)
         await interaction.response.send_message(embed=embed, view=self.PointValueButtons(self))
+
+async def setup(bot):
+    await bot.add_cog(Points(bot))
