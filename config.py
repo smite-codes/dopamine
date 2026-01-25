@@ -7,7 +7,8 @@ load_dotenv()
 # Tokens (nom nom nom, tasty 🤤😝)
 TOKEN = os.getenv("DISCORD_TOKEN")
 TOPGG_TOKEN = os.getenv("TOPGG_TOKEN")
-OVERRIDE_VOTEWALL = os.getenv("OVERRIDE_VOTEWALL", False)
+OVERRIDE_VOTEWALL = os.getenv("OVERRIDE_VOTEWALL", True)
+LOGGING_DEBUG_MODE = os.getenv("LOGGING_DEBUG_MODE", False)
 
 if not TOKEN:
     raise SystemExit("Set DISCORD_TOKEN in .env")
