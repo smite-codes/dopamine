@@ -9,7 +9,7 @@ import psutil
 import asyncio
 import os
 
-class Dblc(commands.cog):
+class Dblc(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
@@ -130,9 +130,9 @@ class Dblc(commands.cog):
         server_count = len(self.bot.guilds)
         await interaction.response.send_message(f"I am currently in **{server_count}** servers.")
 
-    @app_commands.Group(name="latency", description="Latency-related commands.")
+    latency = app_commands.Group(name="latency", description="Latency-related commands.")
 
-    @app_commands.command(name="info", description="Get detailed latency and bot information")
+    @latency.command(name="info", description="Get detailed latency and bot information")
 
     async def info(self, interaction: discord.Interaction):
         def format_uptime(seconds):
