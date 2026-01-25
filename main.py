@@ -67,12 +67,13 @@ async def setup_hook():
         for extension in extensions:
             try:
                 await bot.unload_extension(extension)
-                print(f"Unloaded {extension}")
+                print(f"> Unloaded {extension} successfully")
             except Exception as e:
                 print(f"Error unloading {extension}: {e}")
 
         print("👋 Goodbye!")
         await bot.close()
+        sys.exit(0)
 
 bot.setup_hook = setup_hook
 
@@ -80,14 +81,24 @@ bot.setup_hook = setup_hook
 async def on_ready():
     if bot.owner_id is None:
         app_info = await bot.application_info()
-        bot.owner_id = app_info.owner.id
-        owner_username = bot.get_user(bot.owner_id)
-        if not owner_username:
-            owner_username = await bot.fetch_user(bot.owner_id)
+
+        if app_info.team:
+            bot.owner_id = app_info.team.owner_id
+        else:
+            bot.owner_id = app_info.owner.id
+
+        owner_user = bot.get_user(bot.owner_id)
+        if not owner_user:
+            owner_user = await bot.fetch_user(bot.owner_id)
+
+        owner_display_name = owner_user.name
+    else:
+        owner_user = await bot.fetch_user(bot.owner_id)
+        owner_display_name = owner_user.name
 
     print(f"---------------------------------------------------")
     print(f"Bot ready: {bot.user} (ID: {bot.user.id})")
-    print(f"Bot Owner identified: {owner_username}")
+    print(f"Bot Owner identified: {owner_display_name}")
     print(f"---------------------------------------------------")
 
     await bot.change_presence(
