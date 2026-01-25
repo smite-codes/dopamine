@@ -37,7 +37,7 @@ Invite the official, pre-hosted Dopamine bot (no self-hosting required) by click
 
 ### Prerequisites:
 
-* Python 3.x
+* Python 3.9 or higher.
 
 * A Discord Bot Token (via Discord Developer Portal)
 
