@@ -66,7 +66,7 @@ class Dblc(commands.Cog):
 
         await interaction.edit_original_response(f"Successfully purged **{deleted_count}** messages.", ephemeral=True)
 
-    @app_commands.ban(name="ban", description="Fake-ban someone (cosmetic).")
+    @app_commands.command(name="ban", description="Fake-ban someone (cosmetic).")
     @app_commands.describe(member="Who to fake-ban", duration="How long (text)", reason="Optional reason")
     async def ban(self, interaction: discord.Interaction, member: discord.Member | None = None,
                         duration: str | None = None, reason: str | None = None):
