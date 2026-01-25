@@ -1182,3 +1182,6 @@ class Giveaways(commands.Cog):
             color=discord.Color.blue()
         )
         await interaction.edit_original_response(embed=embed)
+
+async def setup(bot):
+    await bot.add_cog(Giveaways(bot))
