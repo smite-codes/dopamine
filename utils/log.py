@@ -3,6 +3,7 @@ import aiosqlite
 import os
 from typing import Optional, Dict
 from config import LDB_PATH
+from contextlib import asynccontextmanager
 
 
 class LoggingManager:
@@ -23,7 +24,7 @@ class LoggingManager:
                 await conn.execute("PRAGMA synchronous = NORMAL")
                 await conn.commit()
                 await self.db_pool.put(conn)
-
+    @asynccontextmanager
     async def acquire_db(self):
         if self.db_pool is None:
             await self.init_pools()
