@@ -91,14 +91,14 @@ async def on_ready():
         if not owner_user:
             owner_user = await bot.fetch_user(bot.owner_id)
 
-        owner_display_name = owner_user.name
+        owner_user_name = owner_user.name
     else:
         owner_user = await bot.fetch_user(bot.owner_id)
-        owner_display_name = owner_user.name
+        owner_user_name = owner_user.name
 
     print(f"---------------------------------------------------")
     print(f"Bot ready: {bot.user} (ID: {bot.user.id})")
-    print(f"Bot Owner identified: {owner_display_name}")
+    print(f"Bot Owner identified: {owner_user_name}")
     print(f"---------------------------------------------------")
 
     await bot.change_presence(
