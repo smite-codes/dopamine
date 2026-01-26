@@ -1159,7 +1159,7 @@ class Giveaways(commands.Cog):
                     yield lst[i:i + n]
 
             async with self.acquire_db() as db:
-                async with db.execute("SELECT user_id FROM giveaway_participants WHERE giveaway_id = ? guild_id = ?", (giveaway_id, interaction.guild_id,)) as cursor:
+                async with db.execute("SELECT user_id FROM giveaway_participants WHERE giveaway_id = ? AND guild_id = ?", (giveaway_id, interaction.guild_id,)) as cursor:
                     rows = await cursor.fetchall()
 
                     pool = [r[0] for r in rows]

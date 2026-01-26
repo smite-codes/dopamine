@@ -103,7 +103,7 @@ async def on_ready():
 
     await bot.change_presence(
         status=discord.Status.dnd,
-        activity=discord.CustomActivity(name="Flirting with your neurons")
+        activity=discord.CustomActivity(name="✨ Testing v3.0.0-alpha!")
     )
 
 @bot.tree.command(name="fuckoff", description="Is the bot annoying you? Tell it to fuck off and shut itself down using this.")
