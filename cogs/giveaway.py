@@ -948,15 +948,11 @@ class Giveaways(commands.Cog):
         self.participant_cache[giveaway_id] = set()
 
         async with self.acquire_db() as db:
-            await db.execute('''
-                             INSERT INTO giveaways (guild_id, giveaway_id, channel_id, message_id, prize, winners_count,
-                                                    end_time, host_id, required_roles, req_behaviour, blacklisted_roles,
-                                                    extra_entry_roles, winner_role_id, image_url, thumbnail_url, color,
-                                                    ended)
-                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
-                             ''', tuple(data.values()))
+            placeholders = ", ".join(["?"] * len(data))
+            columns = ", ".join(data.keys())
+            await db.execute(f"INSERT INTO giveaways ({columns}) VALUES ({placeholders})",
+                             tuple(data.values()))
             await db.commit()
-        return giveaway_id
 
     async def giveaway_autocomplete(self, interaction: discord.Interaction, current: str, magic: bool = False):
         choices = []
