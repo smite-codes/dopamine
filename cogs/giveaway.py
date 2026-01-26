@@ -880,7 +880,7 @@ class Giveaways(commands.Cog):
         embed = discord.Embed(
             title=f"{title_text}",
             description=f"Click the 🎉 button below to enter this giveaway!\n\n"
-                        f"Winners: **{draft.winners}**"
+                        f"Winners: **{draft.winners}**\n"
                         f"Ends: **<t:{draft.end_time}:R>**",
             colour=embed_color
         )
