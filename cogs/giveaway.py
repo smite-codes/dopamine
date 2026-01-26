@@ -1122,11 +1122,14 @@ class Giveaways(commands.Cog):
             return await interaction.response.send_message("That is not a valid ID!", ephemeral=True)
 
         async with self.acquire_db() as db:
-            async with db.execute("SELECT prize, winner_role_id, channel_id FROM giveaways WHERE giveaway_id = ?", (giveaway_id,)) as cursor:
+            async with db.execute("SELECT prize, winner_role_id, channel_id, ended FROM giveaways WHERE giveaway_id = ?", (giveaway_id,)) as cursor:
                 g = await cursor.fetchone()
 
             if not g:
-                return await interaction.edit_original_response("Giveaway data not found.", ephemeral=True)
+                return await interaction.response.send_message("Giveaway data not found.", ephemeral=True)
+
+            if g[3] == 0:
+                return await interaction.response.send_message("This giveaway hasn't ended yet! You can't reroll active giveaways.")
 
         body_content = (f"Are you sure you want to:\n\n"
                         f"* Re-roll this giveaway to pick **{winners}** new winners\n"
