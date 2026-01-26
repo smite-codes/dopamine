@@ -10,6 +10,7 @@ import random
 import asyncio
 import aiosqlite
 from datetime import datetime, timezone
+from discord.ui import TextDisplay
 
 from config import GDB_PATH
 from utils.time import get_duration_to_seconds, get_now_plus_seconds_unix
@@ -537,97 +538,140 @@ class GiveawayJoinView(discord.ui.View):
         view = ParticipantPaginator(bot=self.cog.bot, participants=participants, prize=prize, extra_roles=extra_roles_list, guild=interaction.guild)
         await interaction.response.send_message(embed=view.get_embed(), view=view, ephemeral=True)
 
+class PrivateLayoutView(discord.ui.LayoutView):
+    def __init__(self, user, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.user = user  # The person who triggered the command
 
-class DestructiveConfirmationView(discord.ui.LayoutView):
-    def __init__(self, title_text: str, body_text: str, color: discord.Color):
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.user.id:
+            await interaction.response.send_message(
+                "This isn't for you!",
+                ephemeral=True
+            )
+            return False
+        return True
+
+class DestructiveConfirmationView(PrivateLayoutView):
+    def build_layout(self):
+        self.clear_items()
+        container = discord.ui.Container(accent_color=self.color)
+        container.add_item(discord.ui.TextDisplay(f"### {self.title_text}"))
+        container.add_item(discord.ui.Separator())
+        container.add_item(discord.ui.TextDisplay(self.body_text))
+
+        if self.value is None:
+            action_row = discord.ui.ActionRow()
+            cancel = discord.ui.Button(label="Cancel", style=discord.ButtonStyle.gray)
+            confirm = discord.ui.Button(label="Delete Permanently", style=discord.ButtonStyle.red)
+
+            cancel.callback = self.cancel_callback
+            confirm.callback = self.confirm_callback
+
+            action_row.add_item(cancel)
+            action_row.add_item(confirm)
+            container.add_item(discord.ui.Separator())
+            container.add_item(action_row)
+
+        self.add_item(container)
+
+    async def update_view(self, interaction: discord.Interaction, title: str, color: discord.Color):
+        self.title_text = title
+        self.body_text = f"~~{self.body_text}~~"
+        self.color = color
+        self.build_layout()
+
+        if interaction.response.is_done():
+            await interaction.edit_original_response(view=self)
+        else:
+            await interaction.response.edit_message(view=self)
+        self.stop()
+
+    async def cancel_callback(self, interaction: discord.Interaction):
+        self.value = False
+        await self.update_view(interaction, "Action Canceled", discord.Color(0xdf5046))
+
+    async def confirm_callback(self, interaction: discord.Interaction):
+        self.value = True
+        await self.update_view(interaction, "Action Confirmed", discord.Color.green())
+
+    async def on_timeout(self):
+        if self.value is None and self.message:
+            self.title_text = "Timed Out"
+            self.body_text = f"~~{self.body_text}~~"
+            self.color = discord.Color(0xdf5046)
+            self.build_layout()
+            await self.message.edit(view=self)
+        self.stop()
+
+
+class ConfirmationView(PrivateLayoutView):
+    def __init__(self, title_text: str, body_text: str, color: discord.Color = None):
         super().__init__(timeout=30)
         self.value = None
         self.title_text = title_text
         self.body_text = body_text
         self.color = color
+        self.message: discord.Message = None
         self.build_layout()
 
     def build_layout(self):
         self.clear_items()
-
         container = discord.ui.Container(accent_color=self.color)
-
-        container.add_item(discord.ui.Section(content=f"## {self.title_text}"))
-
+        container.add_item(discord.ui.TextDisplay(f"### {self.title_text}"))
         container.add_item(discord.ui.Separator())
+        container.add_item(discord.ui.TextDisplay(self.body_text))
 
-        container.add_item(discord.ui.Section(content=self.body_text))
+        if self.value is None:
+            action_row = discord.ui.ActionRow()
+            cancel = discord.ui.Button(label="Cancel", style=discord.ButtonStyle.red)
+            confirm = discord.ui.Button(label="Confirm", style=discord.ButtonStyle.green)
 
-        container.add_item(discord.ui.Separator())
+            cancel.callback = self.cancel_callback
+            confirm.callback = self.confirm_callback
 
-        actions = discord.ui.ActionRow(
-            discord.ui.Button(label="Cancel", style=discord.ButtonStyle.grey, custom_id="cancel_btn"),
-            discord.ui.Button(label="Delete Permanently", style=discord.ButtonStyle.red, custom_id="confirm_btn")
-        )
-        container.add_item(actions)
+            action_row.add_item(cancel)
+            action_row.add_item(confirm)
+            container.add_item(discord.ui.Separator())
+            container.add_item(action_row)
 
         self.add_item(container)
 
-    async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        custom_id = interaction.data.get("custom_id")
-        if custom_id == "confirm_btn":
-            self.value = True
-        elif custom_id == "cancel_btn":
-            self.value = False
-
-        if self.value is not None:
-            self.stop()
-            return True
-        return False
-
-class ConfirmationView(discord.ui.LayoutView):
-    def __init__(self, title_text: str, body_text: str, color: discord.Color):
-        super().__init__(timeout=30)
-        self.value = None
-        self.title_text = title_text
-        self.body_text = body_text
+    async def update_view(self, interaction: discord.Interaction, title: str, color: discord.Color):
+        self.title_text = title
+        self.body_text = f"~~{self.body_text}~~"
         self.color = color
         self.build_layout()
 
-    def build_layout(self):
-        self.clear_items()
+        if interaction.response.is_done():
+            await interaction.edit_original_response(view=self)
+        else:
+            await interaction.response.edit_message(view=self)
+        self.stop()
 
-        container = discord.ui.Container(accent_color=self.color)
+    async def cancel_callback(self, interaction: discord.Interaction):
+        self.value = False
+        await self.update_view(interaction, "Action Canceled", discord.Color(0xdf5046))
 
-        container.add_item(discord.ui.Section(content=f"## {self.title_text}"))
+    async def confirm_callback(self, interaction: discord.Interaction):
+        self.value = True
+        await self.update_view(interaction, "Action Confirmed", discord.Color.green())
 
-        container.add_item(discord.ui.Separator())
-
-        container.add_item(discord.ui.Section(content=self.body_text))
-
-        container.add_item(discord.ui.Separator())
-
-        actions = discord.ui.ActionRow(
-            discord.ui.Button(label="Cancel", style=discord.ButtonStyle.grey, custom_id="cancel_btn"),
-            discord.ui.Button(label="Confirm", style=discord.ButtonStyle.red, custom_id="confirm_btn")
-        )
-        container.add_item(actions)
-
-        self.add_item(container)
-
-    async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        custom_id = interaction.data.get("custom_id")
-        if custom_id == "confirm_btn":
-            self.value = True
-        elif custom_id == "cancel_btn":
-            self.value = False
-
-        if self.value is not None:
-            self.stop()
-            return True
-        return False
+    async def on_timeout(self):
+        if self.value is None and self.message:
+            self.title_text = "Timed Out"
+            self.body_text = f"~~{self.body_text}~~"
+            self.color = discord.Color(0xdf5046)
+            self.build_layout()
+            await self.message.edit(view=self)
+        self.stop()
 
 class Giveaways(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.giveaway_cache: Dict[int, dict] = {}
         self.participant_cache: Dict[int, Set[int]] = {}
-        self.db_pool: Optional[asyncio.Queue[aiosqlite.connection]] = None
+        self.db_pool: Optional[asyncio.Queue[aiosqlite.Connection]] = None
         self.check_giveaways.start()
 
     async def cog_load(self):
@@ -1027,32 +1071,14 @@ class Giveaways(commands.Cog):
         if giveaway_id not in self.giveaway_cache:
             return await interaction.response.send_message("That giveaway is not active or doesn't exist!", ephemeral=True)
 
-        body_content = f"Are you sure you want to end this giveaway right now and announce the winners??"
-        view = ConfirmationView("Pending Confirmation", body_content, discord.Color.from_rgb(0, 0, 0))
-        await interaction.response.send_message(layout=view)
+        body_content = f"Are you sure you want to end this giveaway right now and announce the winners?"
+        view = ConfirmationView("Pending Confirmation", body_content)
+        await interaction.response.send_message(view=view)
+        response = await interaction.original_response()
         await view.wait()
 
-        if view.value is None:
-            view.title_text = "Timed Out"
-            view.body_text = f"~~{body_content}~~"
-            view.color = discord.Color.red()
-            view.build_layout()
-            await interaction.edit_original_response(view=view)
-
-        elif view.value is True:
+        if view.value is True:
             await self.end_giveaway(giveaway_id, interaction.guild_id)
-            view.title_text = "Action Confirmed"
-            view.body_text = f"~~{body_content}~~"
-            view.color = discord.Color.green()
-            view.build_layout()
-            await interaction.edit_original_response(view=view)
-
-        else:
-            view.title_text = "Action Canceled"
-            view.body_text = f"~~{body_content}~~"
-            view.color = discord.Color.red()
-            view.build_layout()
-            await interaction.edit_original_response(view=view)
 
     @giveaway_end.autocomplete("giveaway_id")
     async def end_autocomplete(self, interaction: discord.Interaction, current: str):
@@ -1067,7 +1093,9 @@ class Giveaways(commands.Cog):
             return await interaction.response.send_message("That is not a valid ID!", ephemeral=True)
 
         async with self.acquire_db() as db:
-            prize = await db.execute("SELECT prize FROM giveaways WHERE giveaway_id = ? and guild_id = ?", (giveaway_id, interaction.guild.id,))
+            async with db.execute("SELECT prize FROM giveaways WHERE giveaway_id = ? and guild_id = ?", (giveaway_id, interaction.guild.id,)) as cursor:
+                row = await cursor.fetchone()
+                prize= row[0] if row else "Unknown Prize"
             async with db.execute("SELECT channel_id, message_id, prize FROM giveaways WHERE giveaway_id = ? AND guild_id = ?", (giveaway_id, interaction.guild.id,)) as cursor:
                 row = await cursor.fetchone()
 
@@ -1075,18 +1103,12 @@ class Giveaways(commands.Cog):
                 return await interaction.response.send_message("Giveaway not found.", ephemeral=True)
 
             body_content = f"Are you sure you want to delete the giveaway for **{prize}** (ID: {giveaway_id}) permanently?"
-            view = DestructiveConfirmationView("Pending Confirmation", body_content, discord.Color.from_rgb(0, 0, 0))
-            await interaction.response.send_message(layout=view)
+            view = DestructiveConfirmationView("Pending Confirmation", body_content)
+            response = await interaction.response.send_message(view=view)
+            view.message = await interaction.original_response()
             await view.wait()
 
-            if view.value is None:
-                view.title_text = "Timed Out"
-                view.body_text = f"~~{body_content}~~"
-                view.color = discord.Color.red()
-                view.build_layout()
-                await interaction.edit_original_response(view=view)
-
-            elif view.value is True:
+            if view.value is True:
                 async with self.acquire_db() as db:
                     await db.execute("DELETE FROM giveaways WHERE giveaway_id = ?", (giveaway_id,))
                     await db.execute("DELETE FROM giveaway_participants WHERE giveaway_id = ?", (giveaway_id,))
@@ -1096,18 +1118,6 @@ class Giveaways(commands.Cog):
                         self.giveaway_cache.pop(giveaway_id)
                     except Exception:
                         pass
-                view.title_text = "Action Confirmed"
-                view.body_text = f"~~{body_content}~~"
-                view.color = discord.Color.green()
-                view.build_layout()
-                await interaction.edit_original_response(view=view)
-
-            else:
-                view.title_text = "Action Canceled"
-                view.body_text = f"~~{body_content}~~"
-                view.color = discord.Color.red()
-                view.build_layout()
-                await interaction.edit_original_response(view=view)
 
     @giveaway_delete.autocomplete("giveaway_id")
     async def delete_autocomplete(self, interaction: discord.Interaction, current: str):
@@ -1131,29 +1141,17 @@ class Giveaways(commands.Cog):
             if g[3] == 0:
                 return await interaction.response.send_message("This giveaway hasn't ended yet! You can't reroll active giveaways.")
 
-        body_content = (f"Are you sure you want to:\n\n"
+        body_content = (f"Are you sure you want to:\n"
                         f"* Re-roll this giveaway to pick **{winners}** new winners\n"
                         f"* {'Preserve old winners and their roles' if preserve_winners else f'over-write **{winners}** old winners and remove their winner role'}\n"
                         f"{f'* Give **{winners}** the winner role' if g[1] else ''}")
 
-        view = ConfirmationView("Pending Confirmation", body_content, discord.Color.from_rgb(0, 0, 0))
-        await interaction.response.send_message(view=view)
+        view = ConfirmationView("Pending Confirmation", body_content)
+        response = await interaction.response.send_message(view=view)
+        view.message = await interaction.original_response()
         await view.wait()
 
-        if view.value is None:
-            view.title_text = "Timed Out"
-            view.body_text = f"~~{body_content}~~"
-            view.color = discord.Color.red()
-            view.build_layout()
-            await interaction.edit_original_response(view=view)
-
-        if view.value is False:
-            view.title_text = "Action Canceled"
-            view.body_text = f"~~{body_content}~~"
-            view.color = discord.Color.red()
-            view.build_layout()
-            await interaction.edit_original_response(layout=view)
-        else:
+        if view.value is True:
             async def chunk_list(self, lst, n):
                 for i in range(0, len(lst), n):
                     yield lst[i:i + n]
@@ -1194,7 +1192,7 @@ class Giveaways(commands.Cog):
                                         except discord.HTTPException:
                                             pass
                                 await asyncio.sleep(1.5)
-                    await db.execute("DELETE FROM giveaway_winners WHERE giveaway_id = ? user_id = ?", (giveaway_id, old_uid))
+                    await db.execute("DELETE FROM giveaway_winners WHERE giveaway_id = ? AND user_id = ?", (giveaway_id, old_uid))
 
                 for new_uid in new_picks:
                     await db.execute("INSERT INTO giveaway_winners (giveaway_id, user_id) VALUES (?, ?)", (giveaway_id, new_uid))
@@ -1230,12 +1228,6 @@ class Giveaways(commands.Cog):
                 mention_str = ", ".join([f"<@{w}>" for w in new_picks])
                 mode_text = "added to the pool of winners" if preserve_winners else "selected as the new winners"
                 await channel.send (f"🎉 Congratulations to: {mention_str} for being {mode_text} for **{g[0]}**!\n\nThis giveaway has been re-rolled by {interaction.user.mention}")
-
-                view.title_text = "Action Confirmed"
-                view.body_text = f"~~{body_content}~~"
-                view.color = discord.Color.green()
-                view.build_layout()
-                await interaction.edit_original_response(view=view)
 
     @giveaway_reroll.autocomplete("giveaway_id")
     async def reroll_autocomplete(self, interaction: discord.Interaction, current: str):
