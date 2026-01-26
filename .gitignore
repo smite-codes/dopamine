@@ -219,3 +219,9 @@ databases/
 Thumbs.db
 .idea/
 __pycache__/
+
+*.1
+*.2
+*.3
+*.4
+*.5
