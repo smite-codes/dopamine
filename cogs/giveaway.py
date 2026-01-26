@@ -61,7 +61,7 @@ class GiveawayEditSelect(discord.ui.Select):
         if value in ["image", "thumbnail", "color"]:
             return await interaction.response.send_modal(GiveawayVisualsModal(value, self.draft, self.parent_view))
 
-        new_view = discord.ui.View()
+        new_view = discord.ui.View(timeout=180)
         msg = ""
 
         if value == "channel":
@@ -318,6 +318,7 @@ class GiveawayPreviewView(discord.ui.View):
 
     @discord.ui.button(label="Edit", style=discord.ButtonStyle.gray)
     async def edit_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.message = interaction.message
         view = discord.ui.View()
         select = GiveawayEditSelect(cog=self.cog, draft=self.draft, parent_view=self)
         view.add_item(select)
@@ -327,7 +328,7 @@ class GiveawayPreviewView(discord.ui.View):
             view=view,
             ephemeral=True
         )
-        self.message = await interaction.original_response()
+        self.message = interaction.message
 
     @discord.ui.button(label="Start", style=discord.ButtonStyle.green)
     async def start_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -400,10 +401,11 @@ class RoleSelectView(discord.ui.View):
 
 
 class WinnerRoleSelectView(discord.ui.View):
-    def __init__(self, key: str, label: str, draft: GiveawayDraft):
+    def __init__(self, key: str, label: str, draft: GiveawayDraft, parent_view):
         super().__init__(timeout=300)
         self.key = key
         self.draft = draft
+        self.parent_view = parent_view
         self.select = discord.ui.RoleSelect(placeholder=f"Pick {label}...", min_values=1, max_values=10)
         self.select.callback = self.callback
         self.add_item(self.select)
@@ -418,7 +420,8 @@ class WinnerRoleSelectView(discord.ui.View):
             self.draft.blacklisted_roles = role_ids
         elif self.key == "winner_role":
             self.draft.winner_role = role_ids[0]
-
+        new_embed = self.parent_view.cog.create_giveaway_embed(self.draft)
+        await self.parent_view.message.edit(embed=new_embed)
         await interaction.response.send_message(f"Updated {self.key} successfully!", ephemeral=True)
 
 
