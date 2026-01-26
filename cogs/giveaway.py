@@ -246,7 +246,7 @@ class ParticipantPaginator(discord.ui.View):
         for item in page_list:
             user = self.bot.get_user(item['id'])
             if user:
-                name = user.name if self.show_tags else user.display_name
+                name = user.name if self.show_tags else f"<@{user.id}>"
             else:
                 name = f"Unknown({item['id']})"
 
