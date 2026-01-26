@@ -1010,8 +1010,6 @@ class Giveaways(commands.Cog):
             view=view
         )
 
-        view.message = await interaction.response.original_response()
-
     @giveaway.command(name="end", description="End an active giveaway (winners are also picked and mentioned).")
     @app_commands.describe(giveaway_id="The ID of the giveaway to end.")
     async def giveaway_end(self, interaction: discord.Interaction, giveaway_id: str):
