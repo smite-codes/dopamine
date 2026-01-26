@@ -961,13 +961,13 @@ class Giveaways(commands.Cog):
             data_source = sorted(self.giveaway_cache.items())
         else:
             async with self.acquire_db() as db:
-                async with db.execute("SELECT giveaway_id, prize FROM giveaways WHERE guild_id = ?", (interaction.guild_id)) as cursor:
+                async with db.execute("SELECT giveaway_id, prize FROM giveaways WHERE guild_id = ?", (interaction.guild_id,)) as cursor:
                     rows = await cursor.fetchall()
                     data_source = [(row[0], {"prize": row[1]}) for row in rows]
 
         for i, (giveaway_id, data) in enumerate(data_source, 1):
-            label = f"{i}. {data['prize']: {giveaway_id}}"
-            if current.lower in label.lower():
+            label = f"{i}. {data['prize']}: {giveaway_id}"
+            if current.lower() in label.lower():
                 choices.append(app_commands.Choice(name=label, value=str(giveaway_id)))
 
         return choices[:25]
@@ -1121,8 +1121,6 @@ class Giveaways(commands.Cog):
         except ValueError:
             return await interaction.response.send_message("That is not a valid ID!", ephemeral=True)
 
-        await interaction.response.defer()
-
         async with self.acquire_db() as db:
             async with db.execute("SELECT prize, winner_role_id, channel_id FROM giveaways WHERE giveaway_id = ?", (giveaway_id,)) as cursor:
                 g = await cursor.fetchone()
@@ -1159,7 +1157,7 @@ class Giveaways(commands.Cog):
                     yield lst[i:i + n]
 
             async with self.acquire_db() as db:
-                async with db.execute("SELECT user_id FROM giveaway_participants WHERE giveaway_id = ?, guild_id = ?", (giveaway_id, interaction.guild_id,)) as cursor:
+                async with db.execute("SELECT user_id FROM giveaway_participants WHERE giveaway_id = ? guild_id = ?", (giveaway_id, interaction.guild_id,)) as cursor:
                     rows = await cursor.fetchall()
 
                     pool = [r[0] for r in rows]
@@ -1194,7 +1192,7 @@ class Giveaways(commands.Cog):
                                         except discord.HTTPException:
                                             pass
                                 await asyncio.sleep(1.5)
-                    await db.execute("DELETE FROM giveaway_winners WHERE giveaway_id = ?, user_id = ?", (giveaway_id, old_uid))
+                    await db.execute("DELETE FROM giveaway_winners WHERE giveaway_id = ? user_id = ?", (giveaway_id, old_uid))
 
                 for new_uid in new_picks:
                     await db.execute("INSERT INTO giveaway_winners (giveaway_id, user_id) VALUES (?, ?)", (giveaway_id, new_uid))
