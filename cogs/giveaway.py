@@ -56,46 +56,40 @@ class GiveawayEditSelect(discord.ui.Select):
     async def callback(self, interaction: discord.Interaction):
         value = self.values[0]
         if value in ["prize", "winners", "duration"]:
-            await interaction.response.send_modal(GiveawayMetadataModal(value, self.draft, self.parent_view))
-        elif value == "channel":
-            new_view = discord.ui.View()
-            new_view.add_item(ChannelSelectView(self.draft, self.parent_view))
-            await interaction.response.send_message("Select the channel for the giveaway:", view=new_view,
-                                                    ephemeral=True)
+            return await interaction.response.send_modal(GiveawayMetadataModal(value, self.draft, self.parent_view))
+
         if value in ["image", "thumbnail", "color"]:
-            await interaction.response.send_modal(GiveawayVisualsModal(value, self.draft, self.parent_view))
+            return await interaction.response.send_modal(GiveawayVisualsModal(value, self.draft, self.parent_view))
+
+        new_view = discord.ui.View()
+        msg = ""
+
+        if value == "channel":
+            new_view.add_item(ChannelSelectView(self.draft, self.parent_view))
+            msg = "Select the target channel:"
         elif value == "behavior":
-            new_view = discord.ui.View()
             new_view.add_item(BehaviorSelect(self.draft, self.parent_view))
-            await interaction.response.send_message("Change required role behaviour:", view=new_view, ephemeral=True)
+            msg = "Change required role behaviour:"
         elif value == "extra":
-            new_view = discord.ui.View()
-            trait = "extra entries role"
             new_view.add_item(RoleSelectView("extra", "Extra Entry Roles", self.draft, self.parent_view))
-            await interaction.response.send_message("Choose roles which will give extra entries:", view=new_view,
-                                                    ephemeral=True)
+            msg = "Choose roles for extra entries:"
         elif value == "required":
             new_view = discord.ui.View()
-            trait = "Required Roles"
             new_view.add_item(RoleSelectView("required", "Required Roles", self.draft, self.parent_view))
-            await interaction.response.send_message("Choose required roles to participate:", view=new_view,
-                                                    ephemeral=True)
+            msg = "Choose roles required to enter:"
         elif value == "winner_role":
-            new_view = discord.ui.View()
-            trait = "Winners' Role"
+
             new_view.add_item(WinnerRoleSelectView("winner_role","Winner Role", self.draft))
-            await interaction.response.send_message("Choose role to be given to winner(s):", view=new_view,
-                                                    ephemeral=True)
+            msg ="Choose role to be given to winner(s):"
         elif value == "blacklist":
-            new_view = discord.ui.View()
-            trait = "Blacklisted Roles"
             new_view.add_item(RoleSelectView("blacklist", "Blacklisted Roles", self.draft, self.parent_view))
-            await interaction.response.send_message("Choose roles that can't participate:", view=new_view,
-                                                    ephemeral=True)
+            msg = "Choose roles that can't participate:"
         elif value == "host":
-            new_view = discord.ui.View()
             new_view.add_item(MemberSelectView(self.draft, self.parent_view))
-            await interaction.response.send_message("Choose the host for this giveaway:", view=new_view, ephemeral=True)
+            msg = "Choose the host for this giveaway:"
+
+        if msg:
+            await interaction.response.send_message(msg, view=new_view, ephemeral=True)
 
 
 class GiveawayMetadataModal(discord.ui.Modal):
@@ -222,7 +216,6 @@ class ParticipantPaginator(discord.ui.View):
         self.per_page = 10
         self.show_tags = False
 
-        # Calculate entries and sort
         self.processed_participants = self._process_participants(participants, extra_roles)
 
     def _process_participants(self, participants, extra_roles):
@@ -236,7 +229,6 @@ class ParticipantPaginator(discord.ui.View):
                         entries += 1
             data.append({'id': uid, 'entries': entries})
 
-        # Sort by entries descending, then by ID (for consistency)
         return sorted(data, key=lambda x: (x['entries'], x['id']), reverse=True)
 
     def get_embed(self):
@@ -329,7 +321,13 @@ class GiveawayPreviewView(discord.ui.View):
         view = discord.ui.View()
         select = GiveawayEditSelect(cog=self.cog, draft=self.draft, parent_view=self)
         view.add_item(select)
-        await interaction.response.send_message(embed=discord.Embed(title="Edit Giveaway", description="Select what you want to edit using the dropdown below.", colour=discord.Colour.blue()), view=view, ephemeral=True)
+
+        await interaction.response.send_message(
+            embed=discord.Embed(title="Edit Giveaway", description="Select a setting...", color=discord.Color.blue()),
+            view=view,
+            ephemeral=True
+        )
+        self.message = await interaction.original_response()
 
     @discord.ui.button(label="Start", style=discord.ButtonStyle.green)
     async def start_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -512,7 +510,6 @@ class GiveawayJoinView(discord.ui.View):
         participant_set = self.cog.participant_cache.get(giveaway_id, set())
         participants = list(participant_set)
 
-        prize = self.cog.giveaway_cache.get(giveaway_id)['prize']
         g = self.cog.giveaway_cache.get(giveaway_id)
         prize = g['prize']
         extra_roles_str = g.get('extra_entry_roles', '')
@@ -1058,8 +1055,8 @@ class Giveaways(commands.Cog):
             return await interaction.response.send_message("That is not a valid ID!", ephemeral=True)
 
         async with self.acquire_db() as db:
-            prize = await db.execute("SELECT prize FROM giveaways WHERE giveaway_id = ? and guild_id = ?", (giveaway_id, interaction.guild.id))
-            async with db.execute("SELECT channel_id, message_id, prize FROM giveaways WHERE giveaway_id = ? AND guild_id = ?", (giveaway_id, interaction.guild.id)) as cursor:
+            prize = await db.execute("SELECT prize FROM giveaways WHERE giveaway_id = ? and guild_id = ?", (giveaway_id, interaction.guild.id,))
+            async with db.execute("SELECT channel_id, message_id, prize FROM giveaways WHERE giveaway_id = ? AND guild_id = ?", (giveaway_id, interaction.guild.id,)) as cursor:
                 row = await cursor.fetchone()
 
             if not row:
@@ -1150,7 +1147,7 @@ class Giveaways(commands.Cog):
                     yield lst[i:i + n]
 
             async with self.acquire_db() as db:
-                async with db.execute("SELECT user_id FROM giveaway_participants WHERE giveaway_id = ?, guild_id = ?", (giveaway_id, interaction.guild_id)) as cursor:
+                async with db.execute("SELECT user_id FROM giveaway_participants WHERE giveaway_id = ?, guild_id = ?", (giveaway_id, interaction.guild_id,)) as cursor:
                     rows = await cursor.fetchall()
 
                     pool = [r[0] for r in rows]
