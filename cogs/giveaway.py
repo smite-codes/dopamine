@@ -1029,7 +1029,7 @@ class Giveaways(commands.Cog):
 
         body_content = f"Are you sure you want to end this giveaway right now and announce the winners??"
         view = ConfirmationView("Pending Confirmation", body_content, discord.Color.from_rgb(0, 0, 0))
-        await interaction.response.send_message(view=view)
+        await interaction.response.send_message(layout=view)
         await view.wait()
 
         if view.value is None:
@@ -1076,7 +1076,7 @@ class Giveaways(commands.Cog):
 
             body_content = f"Are you sure you want to delete the giveaway for **{prize}** (ID: {giveaway_id}) permanently?"
             view = DestructiveConfirmationView("Pending Confirmation", body_content, discord.Color.from_rgb(0, 0, 0))
-            await interaction.response.send_message(view=view)
+            await interaction.response.send_message(layout=view)
             await view.wait()
 
             if view.value is None:
@@ -1152,7 +1152,7 @@ class Giveaways(commands.Cog):
             view.body_text = f"~~{body_content}~~"
             view.color = discord.Color.red()
             view.build_layout()
-            await interaction.edit_original_response(view=view)
+            await interaction.edit_original_response(layout=view)
         else:
             async def chunk_list(self, lst, n):
                 for i in range(0, len(lst), n):
