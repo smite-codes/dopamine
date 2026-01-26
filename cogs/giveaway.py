@@ -37,19 +37,32 @@ class GiveawayEditSelect(discord.ui.Select):
         self.draft = draft
         self.parent_view = parent_view
         options = [
-            discord.SelectOption(label="1. Giveaway Host", value="host", description="The host name to be shown in the giveaway Embed."),
-            discord.SelectOption(label="2. Extra Entries Role", value="extra", description="Roles that will give extra entries. Each role gives +1 entries."),
-            discord.SelectOption(label="3. Required Roles", value="required", description="Roles required to participate."),
-            discord.SelectOption(label="4. Required Roles Behaviour", value="behavior", description="The behavior of the required roles feature."),
-            discord.SelectOption(label="5. Winner Role", value="winner_role", description="Role given to winners."),
-            discord.SelectOption(label="6. Blacklisted Roles", value="blacklist", description="Roles that cannot participate."),
-            discord.SelectOption(label="7. Image", value="image", description="Provide a valid URL for the Embed image."),
-            discord.SelectOption(label="8. Thumbnail", value="thumbnail", description="Provide a valid URL for the Embed thumbnail."),
-            discord.SelectOption(label="9. Colour", value="color", description="Set embed color (Hex or Valid Name).")
+            discord.SelectOption(label="1. Prize", value="prize", description="Change the prize being given away."),
+            discord.SelectOption(label="2. Duration", value="duration", description="Change how long the giveaway lasts (e.g., 1h, 2d)."),
+            discord.SelectOption(label="3. Winners Count", value="winners", description="Change the number of winners."),
+            discord.SelectOption(label="4. Channel", value="channel", description="Change where the giveaway is posted."),
+            discord.SelectOption(label="5. Giveaway Host", value="host", description="The host name to be shown in the giveaway Embed."),
+            discord.SelectOption(label="6. Extra Entries Role", value="extra", description="Roles that will give extra entries. Each role gives +1 entries."),
+            discord.SelectOption(label="7. Required Roles", value="required", description="Roles required to participate."),
+            discord.SelectOption(label="8. Required Roles Behaviour", value="behavior", description="The behavior of the required roles feature."),
+            discord.SelectOption(label="9. Winner Role", value="winner_role", description="Role given to winners."),
+            discord.SelectOption(label="10. Blacklisted Roles", value="blacklist", description="Roles that cannot participate."),
+            discord.SelectOption(label="11. Image", value="image", description="Provide a valid URL for the Embed image."),
+            discord.SelectOption(label="12. Thumbnail", value="thumbnail", description="Provide a valid URL for the Embed thumbnail."),
+            discord.SelectOption(label="13. Colour", value="color", description="Set embed color (Hex or Valid Name).")
         ]
         super().__init__(placeholder="Select a setting to customize...", options=options)
 
     async def callback(self, interaction: discord.Interaction, value: str):
+        value = self.values[0]
+
+        if value in ["prize", "winners", "duration"]:
+            await interaction.response.send_modal(GiveawayMetadataModal(value, self.draft, self.parent_view))
+        elif value == "channel":
+            new_view = discord.ui.View()
+            new_view.add_item(ChannelSelectView(self.draft, self.parent_view))
+            await interaction.response.send_message("Select the channel for the giveaway:", view=new_view,
+                                                    ephemeral=True)
         if value in ["image", "thumbnail", "color"]:
             await interaction.response.send_modal(GiveawayVisualsModal(value, self.draft, self.parent_view))
         elif value == "behavior":
@@ -84,6 +97,69 @@ class GiveawayEditSelect(discord.ui.Select):
             new_view = discord.ui.View()
             new_view.add_item(MemberSelectView(self.draft, self.parent_view))
             await interaction.response.send_message("Choose the host for this giveaway:", view=new_view, ephemeral=True)
+
+
+class GiveawayMetadataModal(discord.ui.Modal):
+    def __init__(self, trait: str, draft: GiveawayDraft, parent_view):
+        super().__init__(title=f"Edit Giveaway {trait.title()}")
+        self.trait = trait
+        self.draft = draft
+        self.parent_view = parent_view
+
+        current_value = ""
+        if trait == "prize":
+            current_value = str(self.draft.prize)
+        elif trait == "winners":
+            current_value = str(self.draft.winners)
+        elif trait == "duration":
+            current_value = ""
+
+        placeholder = "e.g. 1d 12h" if trait == "duration" else "Type here..."
+        self.input_field = discord.ui.TextInput(
+            label=f"Enter {trait.title()}",
+            placeholder=placeholder,
+            default=current_value,
+            required=True
+        )
+        self.add_item(self.input_field)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        value = self.input_field.value
+
+        if self.trait == "prize":
+            self.draft.prize = value
+        elif self.trait == "winners":
+            if not value.isdigit():
+                return await interaction.response.send_message("Winners must be a number!", ephemeral=True)
+            self.draft.winners = int(value)
+        elif self.trait == "duration":
+            from utils.time import get_duration_to_seconds, get_now_plus_seconds_unix
+            seconds = get_duration_to_seconds(value)
+            if seconds <= 0:
+                return await interaction.response.send_message("Invalid duration format!", ephemeral=True)
+            self.draft.end_time = get_now_plus_seconds_unix(seconds)
+
+        new_embed = self.parent_view.cog.create_giveaway_embed(self.draft)
+        await self.parent_view.message.edit(embed=new_embed)
+        await interaction.response.send_message(f"Updated **{self.trait}** successfully!", ephemeral=True)
+
+class ChannelSelectView(discord.ui.View):
+    def __init__(self, draft: GiveawayDraft, parent_view):
+        super().__init__(timeout=300)
+        self.draft = draft
+        self.parent_view = parent_view
+        self.select = discord.ui.ChannelSelect(
+            placeholder="Choose a channel...",
+            channel_types=[discord.ChannelType.text]
+        )
+        self.select.callback = self.callback
+        self.add_item(self.select)
+
+    async def callback(self, interaction: discord.Interaction):
+        self.draft.channel_id = self.select.values[0].id
+        new_embed = self.parent_view.cog.create_giveaway_embed(self.draft)
+        await self.parent_view.message.edit(embed=new_embed)
+        await interaction.response.send_message(f"Target channel updated to {self.select.values[0].mention}", ephemeral=True)
 
 class GiveawayVisualsModal(discord.ui.Modal):
     def __init__(self, trait: str, draft: GiveawayDraft, parent_view):
@@ -902,7 +978,8 @@ class Giveaways(commands.Cog):
     async def giveaway_create(
         self,
         interaction: discord.Interaction,
-        prize: str, duration: str,
+        prize: Optional[str] = "Unspecified Prize",
+        duration: Optional[str] = "24h",
         winners: app_commands.Range[int, 1, 50] = 1,
         channel: Optional[discord.TextChannel] = Interaction.channel
     ):
