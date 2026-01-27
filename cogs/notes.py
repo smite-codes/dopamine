@@ -102,6 +102,69 @@ class Notes(commands.Cog):
         voter_cog = self.bot.get_cog('TopGGVoter')
         return await voter_cog.check_vote_access(user_id) if voter_cog else True
 
+    class NoteEditModal(discord.ui.Modal, title="Edit Note"):
+        def __init__(self, cog, old_name: str, old_content: str):
+            super().__init__()
+            self.cog = cog
+            self.old_name = old_name  # Keeping track of the original name for the DB query
+
+            # Define fields dynamically to set default values
+            self.note_name = discord.ui.TextInput(
+                label="Note Name",
+                default=old_name,
+                placeholder="Enter a name for your note...",
+                required=True,
+                max_length=100
+            )
+            self.note_content = discord.ui.TextInput(
+                label="Note Content",
+                default=old_content,
+                placeholder="Enter your note content here...",
+                required=True,
+                style=discord.TextStyle.paragraph,
+                max_length=2000
+            )
+
+            self.add_item(self.note_name)
+            self.add_item(self.note_content)
+
+        async def on_submit(self, interaction: discord.Interaction):
+            new_name = self.note_name.value
+            new_content = self.note_content.value
+            user_id = interaction.user.id
+
+            try:
+                async with self.cog.acquire_db() as db:
+                    await db.execute(
+                        """
+                        UPDATE user_notes
+                        SET note_name    = ?,
+                            note_content = ?,
+                            updated_at   = CURRENT_TIMESTAMP
+                        WHERE user_id = ?
+                          AND note_name = ?
+                        """,
+                        (new_name, new_content, user_id, self.old_name),
+                    )
+                    await db.commit()
+
+                if self.old_name != new_name:
+                    self.cog.notes_cache[user_id].pop(self.old_name, None)
+
+                if user_id not in self.cog.notes_cache:
+                    self.cog.notes_cache[user_id] = {}
+                self.cog.notes_cache[user_id][new_name] = new_content
+
+                embed = discord.Embed(
+                    title="Note Updated Successfully",
+                    description=f"New Note Title: **{new_name}**\n\nNew Note Content: **{new_content}**",
+                    color=discord.Color.blue()
+                )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+
+            except Exception as e:
+                await interaction.response.send_message(f"Error updating note: {e}", ephemeral=True)
+
     class NoteModal(discord.ui.Modal, title="Create/Update Note"):
         note_name = discord.ui.TextInput(
             label="Note Name",
@@ -179,7 +242,6 @@ async def _get_names_autocomplete(interaction: discord.Interaction, current: str
     ]
     return choices[:25]
 
-
 @note_group.command(name="create", description="Open the UI to create a note")
 @app_commands.allowed_contexts(guild=True, dms=True, private_channels=True)
 async def note_create(interaction: discord.Interaction):
@@ -196,6 +258,25 @@ async def note_create(interaction: discord.Interaction):
         return await interaction.response.send_message(embed=embed, ephemeral=True)
 
     await interaction.response.send_modal(cog.NoteModal(cog))
+
+@note_group.command(name="edit", description="Edit an existing note")
+@app_commands.autocomplete(name=_get_names_autocomplete)
+@app_commands.allowed_contexts(guild=True, dms=True, private_channels=True)
+async def note_edit(interaction: discord.Interaction, name: str):
+    cog = await _get_notes_cog(interaction)
+    if not cog:
+        return await interaction.response.send_message("Notes system unavailable.", ephemeral=True)
+
+    if not await cog.check_vote_access(interaction.user.id):
+        return await interaction.response.send_message("Please vote to use this feature.", ephemeral=True)
+
+    user_id = interaction.user.id
+    current_content = cog.notes_cache.get(user_id, {}).get(name)
+
+    if current_content is None:
+        return await interaction.response.send_message(f"No note found named '{name}'.", ephemeral=True)
+
+    await interaction.response.send_modal(cog.NoteEditModal(cog, name, current_content))
 
 
 @note_group.command(name="get", description="Retrieve a note by name")
