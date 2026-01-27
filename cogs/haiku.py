@@ -93,7 +93,6 @@ class HaikuDetector(commands.Cog):
                              CREATE TABLE IF NOT EXISTS haiku_settings
                              (
                                  guild_id INTEGER PRIMARY KEY,
-                                 channel_id TEXT DEFAULT '',
                                  is_enabled INTEGER DEFAULT 0
                              )
                              ''')
@@ -110,7 +109,6 @@ class HaikuDetector(commands.Cog):
             await db.commit()
 
     async def populate_caches(self):
-        # Load active guilds
         async with self.acquire_hd_db() as db:
             async with db.execute("SELECT guild_id FROM haiku_settings WHERE is_enabled = 1") as cursor:
                 rows = await cursor.fetchall()
@@ -168,38 +166,62 @@ class HaikuDetector(commands.Cog):
             finally:
                 self.haiku_queue.task_done()
 
-
     async def get_word_syllables(self, word: str) -> int:
-        word_for_lookup = word.lower().replace("'", "")
+        word = word.lower().strip().strip(".:;?!")
 
-        cached = self.haiku_word_cache.get(word_for_lookup)
+        cached = self.haiku_word_cache.get(word)
         if cached is not None:
             return cached
 
-        vowels = 'aeiouy'
-        syllable_count = 0
-        prev_was_vowel = False
-        for char in word_for_lookup:
-            is_vowel = char in vowels
-            if is_vowel and not prev_was_vowel:
-                syllable_count += 1
-            prev_was_vowel = is_vowel
+        if not word or len(word) == 0:
+            return 0
 
-        if word_for_lookup.endswith('e') and syllable_count > 1:
-            syllable_count -= 1
-        return max(1, syllable_count)
+        if len(word) <= 3:
+            return 1
+
+        count = 0
+        vowels = "aeiouy"
+
+        if word.endswith("e"):
+            if not (word.endswith("le") and len(word) > 2 and word[-3] not in vowels):
+                word = word[:-1]
+
+        vowel_runs = re.findall(r'[aeiouy]+', word)
+        for run in vowel_runs:
+            count += 1
+
+            if len(run) > 1:
+                if run in ["ia", "eo", "io", "uo", "oa", "ua"]:
+                    count += 1
+
+        if word.endswith(("ism", "ier", "ia", "ian", "uity", "ium")):
+            count += 1
+
+            if len(word) > 3 and word[-3] not in "td":
+                count -= 1
+
+        if word.startswith("y") and len(word) > 1 and word[1] in vowels:
+            count -= 1
+
+        final_count = max(1, count)
+
+        return final_count
 
     async def remove_urls(self, text: str) -> str:
         return re.sub(r'https?://\S+|www\.\S+', '', text)
 
     async def count_message_syllables(self, message: str) -> int:
-        message_without_urls = await self.remove_urls(message)
-        message_split = re.sub(r'[-_–—]', ' ', message_without_urls)
-        clean_message = re.sub(r'[*,"&@!()$#.:;{}[\]|\\/=+~`]', ' ', message_split)
+        clean_content = await self.remove_urls(message)
 
-        words = re.sub(r'\s+', ' ', clean_message).strip().split()
+        clean_content = re.sub(r'[-_–—]', ' ', clean_content)
+
+        clean_content = re.sub(r'[^\w\s\']', ' ', clean_content)
+
+        words = clean_content.split()
+
         total = 0
         for word in words:
+            word = word.strip("'")
             if word:
                 total += await self.get_word_syllables(word)
         return total
