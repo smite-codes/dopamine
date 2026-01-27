@@ -235,11 +235,11 @@ class AutoReact(commands.Cog):
             return await interaction.response.send_message("Provide 1-3 valid emojis.", ephemeral=True)
 
         guild_panels = [p for (g, pid), p in self.panel_cache.items() if g == interaction.guild.id]
-        if len(guild_panels) >= 3:
-            return await interaction.response.send_message("Maximum of 3 panels reached.", ephemeral=True)
+        if len(guild_panels) >= 20:
+            return await interaction.response.send_message("Maximum of 20 panels reached.", ephemeral=True)
 
         existing_ids = {p['panel_id'] for p in guild_panels}
-        panel_id = next(i for i in range(1, 5) if i not in existing_ids)
+        panel_id = next(i for i in range(1, 24) if i not in existing_ids)
 
         now = time.time()
         serialized = self.serialize_emojis(parsed)
