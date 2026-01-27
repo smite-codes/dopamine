@@ -2,13 +2,13 @@ import asyncio
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
-from discord.ui import View, Button, Modal, TextInput
 import aiosqlite
 import time
-from typing import Optional, List, Dict, Tuple, Set
-from datetime import datetime, timezone
 import re
-from functools import lru_cache
+from typing import Optional, List, Dict, Tuple, Set, Any
+from datetime import datetime, timezone
+from contextlib import asynccontextmanager
+
 from config import ARDB_PATH
 from utils.checks import slash_mod_check
 
@@ -21,164 +21,122 @@ EMOJI_REGEX = re.compile(
 )
 
 
-@lru_cache(maxsize=1024)
-def _parse_emoji_input_cached(emoji_input: str) -> Tuple[str, ...]:
-    """
-    Cached implementation of emoji parsing to avoid repeated regex work
-    for identical inputs. Returns a tuple for hashability.
-    """
-    if not emoji_input:
-        return tuple()
-
-    tokens: List[str] = []
-    primary_parts = [p.strip() for p in re.split(r'[,\s]+', emoji_input) if p.strip()]
-
-    for part in primary_parts:
-        matches = [m.group(0) for m in EMOJI_REGEX.finditer(part)]
-        if matches:
-            tokens.extend(matches)
-        else:
-            tokens.append(part)
-
-    return tuple(tokens)
-
 class AutoReact(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self._db_conn = None
-        self._active_panel_cache: Dict[Tuple[int, int], Dict] = {}
-        self._reaction_queue: "asyncio.Queue[Tuple[discord.Message, str]]" = asyncio.Queue()
+        self.db_pool: Optional[asyncio.Queue] = None
+
+        self.panel_cache: Dict[Tuple[int, int], Dict[str, Any]] = {}
+        self.whitelist_cache: Dict[Tuple[int, int], Set[int]] = {}
+
+        self._reaction_queue: asyncio.Queue[Tuple[discord.Message, str]] = asyncio.Queue()
         self._reaction_semaphore = asyncio.Semaphore(5)
         self._reaction_task: Optional[asyncio.Task] = None
-        self._channel_semaphore = asyncio.Semaphore(5)
 
     async def cog_load(self):
-        """Initialize the autoreact database when cog is loaded"""
-        await self.init_ar_db()
-        if not self._db_keepalive.is_running():
-            self._db_keepalive.start()
+        await self.init_pools()
+        await self.init_db()
+        await self.populate_caches()
         if self._reaction_task is None or self._reaction_task.done():
             self._reaction_task = asyncio.create_task(self.reaction_processor())
 
     async def cog_unload(self):
-        """Close database connection when cog is unloaded"""
-        if self._db_keepalive.is_running():
-            self._db_keepalive.cancel()
-        if self.autoreact_monitor.is_running():
-            self.autoreact_monitor.cancel()
         if self._reaction_task is not None:
             self._reaction_task.cancel()
-        if self._db_conn:
-            await self._db_conn.close()
 
-    async def get_db_connection(self):
-        """Get a database connection with optimized settings for I/O performance"""
-        if self._db_conn is None:
-            max_retries = 5
-            for attempt in range(max_retries):
-                try:
-                    self._db_conn = await aiosqlite.connect(ARDB_PATH, timeout=5.0)
-                    await self._db_conn.execute("PRAGMA busy_timeout=5000")
-                    await self._db_conn.execute("PRAGMA journal_mode=WAL")
-                    await self._db_conn.execute("PRAGMA wal_autocheckpoint=1000")
-                    await self._db_conn.execute("PRAGMA synchronous=NORMAL")
-                    await self._db_conn.execute("PRAGMA cache_size=-64000")
-                    await self._db_conn.execute("PRAGMA foreign_keys=ON")
-                    await self._db_conn.execute("PRAGMA optimize")
-                    await self._db_conn.commit()
-                    break
-                except Exception as e:
-                    if attempt < max_retries - 1:
-                        await asyncio.sleep(0.1 * (2 ** attempt))
-                        continue
-                    else:
-                        raise
-        return self._db_conn
+        if self.db_pool:
+            while not self.db_pool.empty():
+                conn = await self.db_pool.get()
+                await conn.close()
 
-    @tasks.loop(seconds=60)
-    async def _db_keepalive(self):
+    async def init_pools(self, pool_size: int = 5):
+        if self.db_pool is None:
+            self.db_pool = asyncio.Queue(maxsize=pool_size)
+            for _ in range(pool_size):
+                conn = await aiosqlite.connect(ARDB_PATH, timeout=5.0)
+                await conn.execute("PRAGMA busy_timeout=5000")
+                await conn.execute("PRAGMA journal_mode=WAL")
+                await conn.execute("PRAGMA synchronous=NORMAL")
+                await conn.execute("PRAGMA foreign_keys=ON")
+                await conn.commit()
+                await self.db_pool.put(conn)
+
+    @asynccontextmanager
+    async def acquire_db(self):
+        conn = await self.db_pool.get()
         try:
-            db = await self.get_db_connection()
-            cur = await db.execute("SELECT 1")
-            await cur.fetchone()
-            await cur.close()
-        except Exception:
-            pass
+            yield conn
+        finally:
+            await self.db_pool.put(conn)
 
-    async def init_ar_db(self):
-        """Initialize the autoreact database"""
-        db = await self.get_db_connection()
-        await db.execute('''
-            CREATE TABLE IF NOT EXISTS autoreact_panels (
-                guild_id INTEGER,
-                panel_id INTEGER,
-                name TEXT,
-                emoji TEXT,
-                channel_id INTEGER,
-                is_active INTEGER DEFAULT 0,
-                member_whitelist INTEGER DEFAULT 0,
-                image_only_mode INTEGER DEFAULT 0,
-                started_at REAL,
-                PRIMARY KEY (guild_id, panel_id)
-            )
-        ''')
+    async def init_db(self):
+        async with self.acquire_db() as db:
+            await db.execute('''
+                             CREATE TABLE IF NOT EXISTS autoreact_panels
+                             (
+                                 guild_id INTEGER,
+                                 panel_id INTEGER,
+                                 name TEXT,
+                                 emoji TEXT,
+                                 channel_id INTEGER,
+                                 is_active INTEGER DEFAULT 0,
+                                 member_whitelist INTEGER DEFAULT 0,
+                                 image_only_mode INTEGER DEFAULT 0,
+                                 started_at REAL, 
+                                 PRIMARY KEY (guild_id, panel_id)
+                                 )
+                             ''')
+            await db.execute('''
+                             CREATE TABLE IF NOT EXISTS autoreact_whitelist
+                             (
+                                 guild_id INTEGER,
+                                 panel_id INTEGER,
+                                 user_id INTEGER,
+                                 PRIMARY KEY (guild_id, panel_id, user_id)
+                                 )
+                             ''')
+            await db.commit()
 
-        await db.execute('''
-            CREATE TABLE IF NOT EXISTS autoreact_whitelist (
-                guild_id INTEGER,
-                panel_id INTEGER,
-                user_id INTEGER,
-                PRIMARY KEY (guild_id, panel_id, user_id)
-            )
-        ''')
+    async def populate_caches(self):
+        self.panel_cache.clear()
+        self.whitelist_cache.clear()
 
-        await db.execute('''
-            CREATE INDEX IF NOT EXISTS idx_autoreact_panels_active 
-            ON autoreact_panels(guild_id, is_active, channel_id)
-        ''')
+        async with self.acquire_db() as db:
+            async with db.execute("SELECT * FROM autoreact_panels") as cursor:
+                rows = await cursor.fetchall()
+                cols = [c[0] for c in cursor.description]
+                for row in rows:
+                    data = dict(zip(cols, row))
+                    key = (data['guild_id'], data['panel_id'])
+                    # Convert stored pipe string back to list for cache efficiency
+                    data['emoji_list'] = self.deserialize_emojis(data['emoji'])
+                    self.panel_cache[key] = data
 
-        await db.execute('''
-            CREATE INDEX IF NOT EXISTS idx_autoreact_whitelist_lookup 
-            ON autoreact_whitelist(guild_id, panel_id, user_id)
-        ''')
-
-        await db.commit()
-
-    async def get_next_panel_id(self, guild_id: int) -> int:
-        """Find the lowest unused panel ID for a guild"""
-        db = await self.get_db_connection()
-        cursor = await db.execute('''
-            SELECT panel_id FROM autoreact_panels 
-            WHERE guild_id = ? 
-            ORDER BY panel_id
-        ''', (guild_id,))
-
-        rows = await cursor.fetchall()
-        existing_ids = [row[0] for row in rows]
-
-        for i in range(1, len(existing_ids) + 2):
-            if i not in existing_ids:
-                return i
-
-        return 1
+            async with db.execute("SELECT guild_id, panel_id, user_id FROM autoreact_whitelist") as cursor:
+                rows = await cursor.fetchall()
+                for g_id, p_id, u_id in rows:
+                    key = (g_id, p_id)
+                    if key not in self.whitelist_cache:
+                        self.whitelist_cache[key] = set()
+                    self.whitelist_cache[key].add(u_id)
 
     def parse_emoji_input(self, emoji_input: str) -> List[str]:
-        """
-        Parse user input for emoji(s).
-        Accepts unicode and custom emojis (<:name:id> or <a:name:id>).
-        Handles comma/space separated values and contiguous emoji glyphs.
-        Uses a cached implementation under the hood for repeated inputs.
-        """
-        return list(_parse_emoji_input_cached(emoji_input or ""))
+        if not emoji_input: return []
+        tokens = []
+        parts = [p.strip() for p in re.split(r'[,\s]+', emoji_input) if p.strip()]
+        for part in parts:
+            matches = [m.group(0) for m in EMOJI_REGEX.finditer(part)]
+            if matches:
+                tokens.extend(matches)
+            else:
+                tokens.append(part)
+        return tokens
 
     def serialize_emojis(self, emojis: List[str]) -> str:
-        """Store emoji(s) as a '|' separated string."""
         return '|'.join(emojis)
 
     def deserialize_emojis(self, value: str) -> List[str]:
-        """Load emoji(s) from DB, accepting legacy formats."""
-        if not value:
-            return []
+        if not value: return []
         if '|' in value:
             parts = value.split('|')
         elif ',' in value:
@@ -190,118 +148,30 @@ class AutoReact(commands.Cog):
         return [p for p in parts if p]
 
     def format_emojis_for_display(self, emojis: List[str]) -> str:
-        """Return emoji(s) joined by comma-space for human display."""
         return ', '.join(emojis) if emojis else 'None'
 
     autoreact_group = app_commands.Group(name="autoreact", description="AutoReact commands")
-
     panel_group = app_commands.Group(name="panel", description="AutoReact panel management", parent=autoreact_group)
     member_group = app_commands.Group(name="member", description="AutoReact member settings", parent=autoreact_group)
     image_group = app_commands.Group(name="image", description="AutoReact image settings", parent=autoreact_group)
 
     async def panel_name_autocomplete(self, interaction: discord.Interaction, current: str):
-        db = await self.get_db_connection()
-        cursor = await db.execute('''
-            SELECT name FROM autoreact_panels
-            WHERE guild_id = ?
-        ''', (interaction.guild.id,))
-        rows = await cursor.fetchall()
-        names = [row[0] for row in rows]
-
-        current_lower = (current or "").lower()
-        filtered = [n for n in names if current_lower in n.lower()] if current else names
-        filtered = filtered[:25]
-        return [app_commands.Choice(name=n, value=n) for n in filtered]
+        current_lower = current.lower()
+        choices = [
+            app_commands.Choice(name=data['name'], value=data['name'])
+            for (g_id, p_id), data in self.panel_cache.items()
+            if g_id == interaction.guild_id and current_lower in data['name'].lower()
+        ]
+        return choices[:25]
 
     @panel_group.command(name="setup", description="Create a new autoreact panel")
     @app_commands.check(slash_mod_check)
-    @app_commands.describe(
-        name="Unique name for the panel",
-        emojis="Up to 3 emoji(s); paste them in order",
-        channel="Channel where reactions should appear"
-    )
-    async def setup_autoreact_panel(
-            self,
-            interaction: discord.Interaction,
-            name: str,
-            emojis: str,
-            channel: discord.TextChannel
-    ):
+    async def setup_autoreact_panel(self, interaction: discord.Interaction, name: str, emojis: str,
+                                    channel: discord.TextChannel):
         if not await self.bot.get_cog('TopGGVoter').check_vote_access(interaction.user.id):
             embed = discord.Embed(
                 title="Vote to Use This Feature!",
-                description=f"This command requires voting! To access this feature, please vote for Dopamine [__here__](https://top.gg/bot/{self.bot.user.id}).",
-                color=0xffaa00
-            )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-            return
-
-        emojis = self.parse_emoji_input(emojis)
-        if len(emojis) == 0:
-            await interaction.response.send_message(
-                embed=discord.Embed(
-                    title="Error: Invalid Emoji(s)",
-                    description="Please provide at least one valid emoji.",
-                    color=discord.Color.red()
-                ),
-                ephemeral=True
-            )
-            return
-        if len(emojis) > 3:
-            await interaction.response.send_message(
-                embed=discord.Embed(
-                    title="Error: Too Many Emoji(s)",
-                    description="You can specify up to 3 emoji(s) per panel.",
-                    color=discord.Color.red()
-                ),
-                ephemeral=True
-            )
-            return
-
-        db = await self.get_db_connection()
-        cursor = await db.execute('SELECT COUNT(*) FROM autoreact_panels WHERE guild_id = ?', (interaction.guild.id,))
-        row = await cursor.fetchone()
-        panel_count = row[0]
-
-        if panel_count >= 3:
-            await interaction.response.send_message(
-                embed=discord.Embed(
-                    title="Error: Maximum Panels Reached",
-                    description="This server already has the maximum of 3 autoreact panels.",
-                    color=discord.Color.red()
-                ),
-                ephemeral=True
-            )
-            return
-
-        panel_id = await self.get_next_panel_id(interaction.guild.id)
-        now_ts = time.time()
-
-        await db.execute('''
-            INSERT INTO autoreact_panels
-            (guild_id, panel_id, name, emoji, channel_id, is_active, member_whitelist, image_only_mode, started_at)
-            VALUES (?, ?, ?, ?, ?, 1, 0, 0, ?)
-        ''', (interaction.guild.id, panel_id, name, self.serialize_emojis(emojis), channel.id, now_ts))
-
-        await db.commit()
-
-        embed = discord.Embed(
-            title="AutoReact Panel Created and Started",
-            description=f"Name: {name}\nEmoji(s): {self.format_emojis_for_display(emojis)}\nChannel: {channel.mention}",
-            color=discord.Color.green()
-        )
-        embed.set_footer(text=f"AutoReact Panel ID: {panel_id}")
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-
-    @autoreact_group.command(name="panels", description="View all autoreact panels in this server")
-    @app_commands.check(slash_mod_check)
-    async def autoreact_panels(self, interaction: discord.Interaction):
-        """Display all autoreact panels for the guild"""
-
-        if not await self.bot.get_cog('TopGGVoter').check_vote_access(interaction.user.id):
-            embed = discord.Embed(
-                title="Vote to Use This Feature!",
-                description="This command requires voting! To access this feature, please vote for Dopamine [__here__](https://top.gg/bot/{self.bot.user.id}).".format(
+                description="This command requires voting! To access this feature, please vote for Dopamine here: [top.gg](https://top.gg/bot/{bot_id})".format(
                     bot_id=self.bot.user.id
                 ),
                 color=0xffaa00
@@ -309,430 +179,169 @@ class AutoReact(commands.Cog):
             await interaction.response.send_message(embed=embed, ephemeral=True)
             return
 
-        db = await self.get_db_connection()
-        cursor = await db.execute('''
-            SELECT panel_id, name, emoji, channel_id, is_active, member_whitelist, image_only_mode
-            FROM autoreact_panels 
-            WHERE guild_id = ?
-            ORDER BY panel_id
-        ''', (interaction.guild.id,))
+        parsed = self.parse_emoji_input(emojis)
+        if not (0 < len(parsed) <= 3):
+            return await interaction.response.send_message("Provide 1-3 valid emojis.", ephemeral=True)
 
-        panels = await cursor.fetchall()
+        guild_panels = [p for (g, pid), p in self.panel_cache.items() if g == interaction.guild.id]
+        if len(guild_panels) >= 3:
+            return await interaction.response.send_message("Maximum of 3 panels reached.", ephemeral=True)
 
-        if not panels:
-            embed = discord.Embed(
-                title="Your AutoReact Panels",
-                description="No autoreact panels found, use `/autoreact panel setup` to create one!",
-                color=discord.Color(0x337fd5)
-            )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-            return
+        existing_ids = {p['panel_id'] for p in guild_panels}
+        panel_id = next(i for i in range(1, 5) if i not in existing_ids)
 
-        embed = discord.Embed(
-            title="Your AutoReact Panels",
-            color=discord.Color(0x337fd5)
-        )
+        now = time.time()
+        serialized = self.serialize_emojis(parsed)
 
-        description = ""
-        for panel_id, name, emoji_value, channel_id, is_active, member_whitelist, image_only_mode in panels:
-            channel = self.bot.get_channel(channel_id) if channel_id else None
-            channel_name = channel.mention if channel else "Not assigned"
+        async with self.acquire_db() as db:
+            await db.execute('''
+                             INSERT INTO autoreact_panels (guild_id, panel_id, name, emoji, channel_id, is_active, started_at)
+                             VALUES (?, ?, ?, ?, ?, 1, ?)
+                             ''', (interaction.guild.id, panel_id, name, serialized, channel.id, now))
+            await db.commit()
 
-            emojis_list = self.deserialize_emojis(emoji_value)
-            emojis_display = self.format_emojis_for_display(emojis_list)
+        self.panel_cache[(interaction.guild.id, panel_id)] = {
+            "guild_id": interaction.guild.id, "panel_id": panel_id, "name": name,
+            "emoji": serialized, "emoji_list": parsed, "channel_id": channel.id,
+            "is_active": 1, "member_whitelist": 0, "image_only_mode": 0, "started_at": now
+        }
 
-            whitelist_info = ""
-            if member_whitelist:
-                db2 = await self.get_db_connection()
-                cursor2 = await db2.execute('''
-                    SELECT COUNT(*) FROM autoreact_whitelist 
-                    WHERE guild_id = ? AND panel_id = ?
-                ''', (interaction.guild.id, panel_id))
-                row2 = await cursor2.fetchone()
-                whitelist_count = row2[0]
-                whitelist_info = f" ({whitelist_count} users)"
-            else:
-                whitelist_info = " (All users)"
+        await interaction.response.send_message(embed=discord.Embed(title="Panel created successfully", description=f"Panel **{name}** created and started successfully."), ephemeral=True)
 
-            description += f"## {panel_id}. {name}\n"
-            description += f"* **Emoji(s):** {emojis_display}\n"
-            description += f"* **Channel:** {channel_name}\n"
-            description += f"* **Status:** {'🟢 Active' if is_active else '🔴 Inactive'}\n"
-            description += f"* **Target:** {'Specific users' if member_whitelist else 'All users'}{whitelist_info}\n"
-            description += f"* **Mode:** {'Image-only' if image_only_mode else 'All messages'}\n"
-            description += f"* **Panel ID: {panel_id}**\n\n"
+    @panel_group.command(name="list", description="View all autoreact panels")
+    @app_commands.check(slash_mod_check)
+    async def autoreact_panels(self, interaction: discord.Interaction):
+        guild_panels = [p for (g, pid), p in self.panel_cache.items() if g == interaction.guild.id]
+        if not guild_panels:
+            return await interaction.response.send_message("No panels found.", ephemeral=True)
 
-        embed.description = description
-        embed.set_footer(text=f"Total panels: {len(panels)}/3")
+        embed = discord.Embed(title="Your AutoReact Panels", color=0x337fd5)
+        desc = ""
+        for p in sorted(guild_panels, key=lambda x: x['panel_id']):
+            chan = f"<#{p['channel_id']}>"
+            emojis = self.format_emojis_for_display(p['emoji_list'])
+            status = '🟢 Active' if p['is_active'] else '🔴 Inactive'
+            wl_count = len(self.whitelist_cache.get((p['guild_id'], p['panel_id']), [])) if p[
+                'member_whitelist'] else "All users"
+
+            desc += f"## {p['panel_id']}. {p['name']}\n"
+            desc += f"* **Emoji(s):** {emojis}\n* **Channel:** {chan}\n* **Status:** {status}\n"
+            desc += f"* **Target:** {wl_count}\n* **Mode:** {'Image-only' if p['image_only_mode'] else 'All'}\n\n"
+
+        embed.description = desc
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @panel_group.command(name="start", description="Start an autoreact panel")
+    @panel_group.command(name="start", description="Start a panel")
     @app_commands.check(slash_mod_check)
     @app_commands.autocomplete(name=panel_name_autocomplete)
-    async def start_autoreact_panel(
-            self,
-            interaction: discord.Interaction,
-            name: str
-    ):
-        if not await self.bot.get_cog('TopGGVoter').check_vote_access(interaction.user.id):
-            embed = discord.Embed(
-                title="Vote to Use This Feature!",
-                description=f"This command requires voting! To access this feature, please vote for Dopamine [__here__](https://top.gg/bot/{self.bot.user.id}).",
-                color=0xffaa00
-            )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-            return
+    async def start_autoreact_panel(self, interaction: discord.Interaction, name: str):
+        target = next(
+            (p for (g, pid), p in self.panel_cache.items() if g == interaction.guild_id and p['name'] == name), None)
+        if not target: return await interaction.response.send_message("Panel not found.", ephemeral=True)
 
-        db = await self.get_db_connection()
-        cursor = await db.execute('''
-            SELECT panel_id, emoji, channel_id, is_active FROM autoreact_panels
-            WHERE guild_id = ? AND name = ?
-        ''', (interaction.guild.id, name))
-        row = await cursor.fetchone()
+        now = time.time()
+        async with self.acquire_db() as db:
+            await db.execute(
+                "UPDATE autoreact_panels SET is_active = 1, started_at = ? WHERE guild_id = ? AND panel_id = ?",
+                (now, interaction.guild_id, target['panel_id']))
+            await db.commit()
 
-        if not row:
-            await interaction.response.send_message(
-                embed=discord.Embed(title="Error", description="Panel not found.", color=discord.Color.red()),
-                ephemeral=True
-            )
-            return
+        target['is_active'] = 1
+        target['started_at'] = now
+        await interaction.response.send_message(embed=discord.Embed(title="AutoReact Stopped",description=f"Panel **{name}** has been sstarted successfully.", color=discord.Color.green()), ephemeral=True)
 
-        panel_id, emoji_value, channel_id, is_active = row
-
-        if channel_id is None:
-            await interaction.response.send_message(
-                embed=discord.Embed(title="Channel Not Set",
-                                    description="Set a channel for this panel before starting.",
-                                    color=discord.Color.red()),
-                ephemeral=True
-            )
-            return
-
-        await db.execute('''
-            UPDATE autoreact_panels
-            SET is_active = 1, started_at = ?
-            WHERE guild_id = ? AND panel_id = ?
-        ''', (time.time(), interaction.guild.id, panel_id))
-        await db.commit()
-
-        emojis_display = self.format_emojis_for_display(self.deserialize_emojis(emoji_value))
-        channel = interaction.guild.get_channel(channel_id)
-        channel_mention = channel.mention if channel else f"<#{channel_id}>"
-        await interaction.response.send_message(
-            embed=discord.Embed(
-                title="AutoReact Started",
-                description=f"Panel **{name}** is now active in {channel_mention} and will react with {emojis_display}.",
-                color=discord.Color.green()
-            ),
-            ephemeral=True
-        )
-
-    @panel_group.command(name="stop", description="Stop an autoreact panel")
+    @panel_group.command(name="stop", description="Stop a panel")
     @app_commands.check(slash_mod_check)
     @app_commands.autocomplete(name=panel_name_autocomplete)
     async def stop_autoreact_panel(self, interaction: discord.Interaction, name: str):
-        if not await self.bot.get_cog('TopGGVoter').check_vote_access(interaction.user.id):
-            embed = discord.Embed(
-                title="Vote to Use This Feature!",
-                description=f"This command requires voting! To access this feature, please vote for Dopamine [__here__](https://top.gg/bot/{self.bot.user.id}).",
-                color=0xffaa00
-            )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-            return
+        target = next(
+            (p for (g, pid), p in self.panel_cache.items() if g == interaction.guild_id and p['name'] == name), None)
+        if not target: return await interaction.response.send_message("Panel not found.", ephemeral=True)
 
-        db = await self.get_db_connection()
-        cursor = await db.execute('''
-            SELECT panel_id, channel_id, is_active FROM autoreact_panels
-            WHERE guild_id = ? AND name = ?
-        ''', (interaction.guild.id, name))
-        row = await cursor.fetchone()
+        async with self.acquire_db() as db:
+            await db.execute("UPDATE autoreact_panels SET is_active = 0 WHERE guild_id = ? AND panel_id = ?",
+                             (interaction.guild_id, target['panel_id']))
+            await db.commit()
 
-        if not row:
-            await interaction.response.send_message(
-                embed=discord.Embed(title="Error", description="Panel not found.", color=discord.Color.red()),
-                ephemeral=True
-            )
-            return
+        target['is_active'] = 0
+        await interaction.response.send_message(f"Stopped **{name}**.", ephemeral=True)
 
-        panel_id, channel_id, is_active = row
-        if not is_active:
-            await interaction.response.send_message(
-                embed=discord.Embed(title="Already Stopped", description="That panel is not currently active.",
-                                    color=discord.Color.red()),
-                ephemeral=True
-            )
-            return
-
-        await db.execute('''
-            UPDATE autoreact_panels
-            SET is_active = 0, started_at = NULL
-            WHERE guild_id = ? AND panel_id = ?
-        ''', (interaction.guild.id, panel_id))
-        await db.commit()
-
-        channel = interaction.guild.get_channel(channel_id) if channel_id else None
-        channel_mention = channel.mention if channel else "its set channel"
-        await interaction.response.send_message(
-            embed=discord.Embed(
-                title="AutoReact Stopped",
-                description=f"Panel **{name}** has been stopped in {channel_mention}.",
-                color=discord.Color.green()
-            ),
-            ephemeral=True
-        )
-
-    @panel_group.command(name="delete", description="Delete an autoreact panel")
+    @panel_group.command(name="delete", description="Delete a panel")
     @app_commands.check(slash_mod_check)
     @app_commands.autocomplete(name=panel_name_autocomplete)
     async def delete_autoreact_panel(self, interaction: discord.Interaction, name: str):
-        if not await self.bot.get_cog('TopGGVoter').check_vote_access(interaction.user.id):
-            embed = discord.Embed(
-                title="Vote to Use This Feature!",
-                description=f"This command requires voting! To access this feature, please vote for Dopamine [__here__](https://top.gg/bot/{self.bot.user.id}).",
-                color=0xffaa00
-            )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-            return
+        target = next(
+            (p for (g, pid), p in self.panel_cache.items() if g == interaction.guild_id and p['name'] == name), None)
+        if not target: return await interaction.response.send_message("Panel not found.", ephemeral=True)
 
-        db = await self.get_db_connection()
-        cursor = await db.execute('''
-            SELECT panel_id FROM autoreact_panels
-            WHERE guild_id = ? AND name = ?
-        ''', (interaction.guild.id, name))
-        row = await cursor.fetchone()
+        key = (interaction.guild_id, target['panel_id'])
+        async with self.acquire_db() as db:
+            await db.execute("DELETE FROM autoreact_whitelist WHERE guild_id = ? AND panel_id = ?", key)
+            await db.execute("DELETE FROM autoreact_panels WHERE guild_id = ? AND panel_id = ?", key)
+            await db.commit()
 
-        if not row:
-            await interaction.response.send_message(
-                embed=discord.Embed(title="Error", description="Panel not found.", color=discord.Color.red()),
-                ephemeral=True
-            )
-            return
-
-        panel_id = row[0]
-
-        await db.execute('''
-            DELETE FROM autoreact_whitelist
-            WHERE guild_id = ? AND panel_id = ?
-        ''', (interaction.guild.id, panel_id))
-
-        await db.execute('''
-            DELETE FROM autoreact_panels
-            WHERE guild_id = ? AND panel_id = ?
-        ''', (interaction.guild.id, panel_id))
-
-        await db.commit()
-
+        self.panel_cache.pop(key, None)
+        self.whitelist_cache.pop(key, None)
         await interaction.response.send_message(
-            embed=discord.Embed(
-                title="AutoReact Panel Deleted",
-                description=f"Deleted panel **{name}**.",
-                color=discord.Color.green()
-            ),
-            ephemeral=True
-        )
 
-    @panel_group.command(name="edit", description="Edit an autoreact panel")
+            embed=discord.Embed(title="AutoReact Panel Deleted", description=f"Deleted panel **{name}**.", color=discord.Color.green()), ephemeral=True)
+
+    @panel_group.command(name="edit", description="Edit a panel")
     @app_commands.check(slash_mod_check)
     @app_commands.autocomplete(name=panel_name_autocomplete)
-    async def edit_autoreact_panel(
-            self,
-            interaction: discord.Interaction,
-            name: str,
-            emoji: Optional[str] = None,
-            channel: Optional[discord.TextChannel] = None,
-            new_name: Optional[str] = None
-    ):
-        if not await self.bot.get_cog('TopGGVoter').check_vote_access(interaction.user.id):
-            embed = discord.Embed(
-                title="Vote to Use This Feature!",
-                description=f"This command requires voting! To access this feature, please vote for Dopamine [__here__](https://top.gg/bot/{self.bot.user.id}).",
-                color=0xffaa00
-            )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-            return
+    async def edit_autoreact_panel(self, interaction: discord.Interaction, name: str, emoji: Optional[str] = None, channel: Optional[discord.TextChannel] = None, new_name: Optional[str] = None):
+        target = next(
+            (p for (g, pid), p in self.panel_cache.items() if g == interaction.guild_id and p['name'] == name), None)
+        if not target: return await interaction.response.send_message("Panel not found.", ephemeral=True)
 
-        db = await self.get_db_connection()
-        cursor = await db.execute('''
-            SELECT panel_id, name, emoji, channel_id, is_active FROM autoreact_panels
-            WHERE guild_id = ? AND name = ?
-        ''', (interaction.guild.id, name))
-        row = await cursor.fetchone()
-
-        if not row:
-            await interaction.response.send_message(
-                embed=discord.Embed(title="Error", description="Panel not found.", color=discord.Color.red()),
-                ephemeral=True
-            )
-            return
-
-        panel_id, cur_name, cur_emoji, cur_channel_id, is_active = row
-
-        update_fields = []
+        updates = []
         params = []
-
-        if emoji is not None:
-            emojis = self.parse_emoji_input(emoji)
-            if len(emojis) == 0:
-                await interaction.response.send_message(
-                    embed=discord.Embed(
-                        title="Error: Invalid Emoji(s)",
-                        description="Please provide at least one valid emoji.",
-                        color=discord.Color.red()
-                    ),
-                    ephemeral=True
-                )
-                return
-            if len(emojis) > 3:
-                await interaction.response.send_message(
-                    embed=discord.Embed(
-                        title="Error: Too Many Emoji(s)",
-                        description="You can specify up to 3 emoji(s) per panel.",
-                        color=discord.Color.red()
-                    ),
-                    ephemeral=True
-                )
-                return
-            update_fields.append("emoji = ?")
-            params.append(self.serialize_emojis(emojis))
-
-        if channel is not None:
-            update_fields.append("channel_id = ?")
+        if emoji:
+            parsed = self.parse_emoji_input(emoji)
+            if 0 < len(parsed) <= 3:
+                updates.append("emoji = ?")
+                params.append(self.serialize_emojis(parsed))
+                target['emoji_list'] = parsed
+                target['emoji'] = self.serialize_emojis(parsed)
+        if channel:
+            updates.append("channel_id = ?")
             params.append(channel.id)
-
-        if new_name is not None:
-            update_fields.append("name = ?")
+            target['channel_id'] = channel.id
+        if new_name:
+            updates.append("name = ?")
             params.append(new_name)
+            target['name'] = new_name
 
-        if not update_fields:
-            await interaction.response.send_message(
-                embed=discord.Embed(title="No Changes", description="Provide at least one field to edit.",
-                                    color=discord.Color.red()),
-                ephemeral=True
-            )
-            return
+        if not updates: return await interaction.response.send_message("No changes provided.", ephemeral=True)
 
-        params.extend([interaction.guild.id, panel_id])
+        params.extend([interaction.guild_id, target['panel_id']])
+        async with self.acquire_db() as db:
+            await db.execute(f"UPDATE autoreact_panels SET {', '.join(updates)} WHERE guild_id = ? AND panel_id = ?",
+                             params)
+            await db.commit()
 
-        await db.execute(f'''
-            UPDATE autoreact_panels
-            SET {", ".join(update_fields)}
-            WHERE guild_id = ? AND panel_id = ?
-        ''', params)
+        await interaction.response.send_message(embed=discord.Embed(title="AutoReact Panel Updated", description=f"Updated panel **{name}**.", color=discord.Color.green()), ephemeral=True)
 
-        await db.commit()
-
-        await interaction.response.send_message(
-            embed=discord.Embed(
-                title="AutoReact Panel Updated",
-                description=f"Updated panel **{cur_name}**.",
-                color=discord.Color.green()
-            ),
-            ephemeral=True
-        )
-
-    @member_group.command(name="whitelist", description="Set up member whitelist for autoreact")
+    @member_group.command(name="whitelist", description="Whitelist a member")
     @app_commands.check(slash_mod_check)
-    async def autoreact_member_whitelist(
-            self,
-            interaction: discord.Interaction,
-            member: discord.Member
-    ):
-        """Set up member whitelist for autoreact"""
+    async def autoreact_member_whitelist(self, interaction: discord.Interaction, member: discord.Member):
+        if member.bot: return await interaction.response.send_message("Bots cannot be whitelisted.", ephemeral=True)
 
-        if member.bot:
-            embed = discord.Embed(
-                title="Error: Cannot Use Bot",
-                description="You cannot add bots to the auto-react whitelist.",
-                color=discord.Color.red()
-            )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-            return
+        guild_panels = [p for (g, pid), p in self.panel_cache.items() if g == interaction.guild.id]
+        if not guild_panels: return await interaction.response.send_message("Create a panel first.", ephemeral=True)
 
-        if not await self.bot.get_cog('TopGGVoter').check_vote_access(interaction.user.id):
-            embed = discord.Embed(
-                title="Vote to Use This Feature!",
-                description="This command requires voting! To access this feature, please vote for Dopamine [__here__](https://top.gg/bot/{self.bot.user.id}).".format(
-                    bot_id=self.bot.user.id
-                ),
-                color=0xffaa00
-            )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-            return
+        view = MemberWhitelistSelectionView(self, interaction.guild.id, member.id, guild_panels)
+        await interaction.response.send_message(f"Select a panel to whitelist {member.display_name}:", view=view,
+                                                ephemeral=True)
 
-        db = await self.get_db_connection()
-        cursor = await db.execute('''
-            SELECT panel_id, name, emoji
-            FROM autoreact_panels 
-            WHERE guild_id = ?
-            ORDER BY panel_id
-        ''', (interaction.guild.id,))
-
-        panels = await cursor.fetchall()
-
-        if not panels:
-            embed = discord.Embed(
-                title="No Available Panels",
-                description="No autoreact panels found. Create one first!",
-                color=discord.Color.red()
-            )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-            return
-
-        view = MemberWhitelistSelectionView(self.bot, interaction.guild.id, member.id, panels)
-
-        embed = discord.Embed(
-            title="Select AutoReact Panel for Member Whitelist",
-            description=f"Choose which autoreact panel to whitelist {member.mention} for:",
-            color=discord.Color(0x337fd5)
-        )
-
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
-
-    @image_group.command(name="only", description="Set up image-only mode for autoreact")
+    @image_group.command(name="only", description="Toggle image-only mode")
     @app_commands.check(slash_mod_check)
-    async def autoreact_image_only_mode(
-            self,
-            interaction: discord.Interaction
-    ):
-        """Set up image-only mode for autoreact"""
+    async def autoreact_image_only_mode(self, interaction: discord.Interaction):
+        guild_panels = [p for (g, pid), p in self.panel_cache.items() if g == interaction.guild.id]
+        if not guild_panels: return await interaction.response.send_message("Create a panel first.", ephemeral=True)
 
-        if not await self.bot.get_cog('TopGGVoter').check_vote_access(interaction.user.id):
-            embed = discord.Embed(
-                title="Vote to Use This Feature!",
-                description="This command requires voting! To access this feature, please vote for Dopamine [__here__](https://top.gg/bot/{self.bot.user.id}).".format(
-                    bot_id=self.bot.user.id
-                ),
-                color=0xffaa00
-            )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-            return
-
-        db = await self.get_db_connection()
-        cursor = await db.execute('''
-            SELECT panel_id, name, emoji
-            FROM autoreact_panels 
-            WHERE guild_id = ?
-            ORDER BY panel_id
-        ''', (interaction.guild.id,))
-
-        panels = await cursor.fetchall()
-
-        if not panels:
-            embed = discord.Embed(
-                title="No Available Panels",
-                description="No autoreact panels found. Create one first!",
-                color=discord.Color.red()
-            )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-            return
-
-        view = ImageOnlyModeSelectionView(self.bot, interaction.guild.id, panels)
-
-        embed = discord.Embed(
-            title="Select AutoReact Panel for Image-Only Mode",
-            description="Choose which autoreact panel to enable image-only mode for:",
-            color=discord.Color(0x337fd5)
-        )
+        view = ImageOnlyModeSelectionView(self, interaction.guild.id, guild_panels)
+        embed = discord.Embed(title="Select AutoReact Panel for Image-Only Mode", description="Choose which autoreact panel to enable image-only mode for:", color=discord.Color(0x337fd5))
 
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
@@ -740,229 +349,86 @@ class AutoReact(commands.Cog):
     async def on_message(self, message: discord.Message):
         if message.author.bot or not message.guild:
             return
+        for (g_id, p_id), panel in self.panel_cache.items():
+            if g_id != message.guild.id or panel['channel_id'] != message.channel.id or not panel['is_active']:
+                continue
 
-        db = await self.get_db_connection()
+            if panel['image_only_mode']:
+                has_img = bool(message.attachments) or any(e.type == 'image' for e in message.embeds)
+                if not has_img: continue
 
-        cursor = await db.execute('''
-                                  SELECT panel_id, emoji, member_whitelist, image_only_mode
-                                  FROM autoreact_panels
-                                  WHERE guild_id = ?
-                                    AND channel_id = ?
-                                    AND is_active = 1
-                                  ''', (message.guild.id, message.channel.id))
-
-        active_panels = await cursor.fetchall()
-
-        if not active_panels:
-            return
-
-        for panel_id, emoji_value, member_whitelist, image_only_mode in active_panels:
-            if image_only_mode:
-                has_images = bool(message.attachments) or any(
-                    embed.type == 'image' for embed in message.embeds
-                )
-                if not has_images:
-                    continue
-            if member_whitelist:
-                wl_cursor = await db.execute('''
-                                             SELECT 1
-                                             FROM autoreact_whitelist
-                                             WHERE guild_id = ?
-                                               AND panel_id = ?
-                                               AND user_id = ?
-                                             ''', (message.guild.id, panel_id, message.author.id))
-                is_whitelisted = await wl_cursor.fetchone()
-                if not is_whitelisted:
-                    continue
-
-            emojis_list = self.deserialize_emojis(emoji_value)
-            for em in emojis_list:
+            if panel['member_whitelist']:
+                allowed = self.whitelist_cache.get((g_id, p_id), set())
+                if message.author.id not in allowed: continue
+            for em in panel['emoji_list']:
                 await self._reaction_queue.put((message, em))
 
     async def reaction_processor(self):
-        """Background worker that processes queued reactions with rate limiting."""
         while True:
             try:
                 message, em = await self._reaction_queue.get()
-                try:
-                    async with self._reaction_semaphore:
-                        try:
-                            await message.add_reaction(em)
-                        except (discord.Forbidden, discord.HTTPException):
-                            pass
-                finally:
-                    self._reaction_queue.task_done()
+                async with self._reaction_semaphore:
+                    try:
+                        await message.add_reaction(em)
+                    except:
+                        pass
+                self._reaction_queue.task_done()
                 await asyncio.sleep(0.1)
             except asyncio.CancelledError:
                 break
-            except Exception:
+            except:
                 continue
-
-    async def _process_channel_panels(self, guild_id: int, channel_id: int, panels: List[Dict]):
-        """Fetch history for a single channel and apply all relevant panels."""
-        try:
-            guild = self.bot.get_guild(guild_id)
-            if not guild:
-                return
-
-            channel = guild.get_channel(channel_id)
-            if not channel:
-                return
-
-            min_started_at = min(p["started_at"] for p in panels)
-            start_time = datetime.fromtimestamp(min_started_at, tz=timezone.utc)
-
-            async with self._channel_semaphore:
-                async for message in channel.history(limit=50, after=start_time):
-                    message_ts = message.created_at.timestamp()
-
-                    if message.author.bot:
-                        continue
-
-                    for panel in panels:
-                        started_at = panel["started_at"]
-                        if message_ts <= started_at:
-                            continue
-
-                        emojis_list = panel["emojis"]
-                        if not emojis_list:
-                            continue
-
-                        if panel["member_whitelist"]:
-                            whitelist_users: Set[int] = panel["whitelist_users"]
-                            if whitelist_users and message.author.id not in whitelist_users:
-                                continue
-
-                        if panel["image_only_mode"]:
-                            has_images = bool(message.attachments) or (message.embeds and any(
-                                embed.type == discord.EmbedType.image for embed in message.embeds))
-                            if not has_images:
-                                continue
-
-                        for em in emojis_list:
-                            try:
-                                already_reacted = False
-                                for reaction in message.reactions:
-                                    if str(reaction.emoji) == em and reaction.me:
-                                        already_reacted = True
-                                        break
-                                if already_reacted:
-                                    continue
-
-                                await self._reaction_queue.put((message, em))
-                            except Exception:
-                                continue
-        except Exception as e:
-            print(f"Error processing channel {channel_id} in guild {guild_id}: {e}")
 
 
 class MemberWhitelistSelectionView(discord.ui.View):
-    def __init__(self, bot, guild_id: int, user_id: int, panels):
+    def __init__(self, cog: AutoReact, guild_id: int, user_id: int, panels: List[Dict]):
         super().__init__(timeout=300)
-        self.bot = bot
-        self.guild_id = guild_id
-        self.user_id = user_id
-        self.panels = panels
+        self.cog = cog
+        for p in panels:
+            btn = discord.ui.Button(label=f"{p['panel_id']}. {p['name']}", style=discord.ButtonStyle.primary)
+            btn.callback = self.make_callback(p, guild_id, user_id)
+            self.add_item(btn)
 
-        for panel_id, name, emoji in panels:
-            button = discord.ui.Button(
-                label=f"{panel_id}. {name}",
-                style=discord.ButtonStyle.primary,
-                custom_id=f"select_whitelist_panel_{panel_id}"
-            )
-            button.callback = lambda interaction, pid=panel_id: self.select_panel(interaction, pid)
-            self.add_item(button)
+    def make_callback(self, panel, guild_id, user_id):
+        async def callback(interaction: discord.Interaction):
+            key = (guild_id, panel['panel_id'])
+            async with self.cog.acquire_db() as db:
+                await db.execute("UPDATE autoreact_panels SET member_whitelist = 1 WHERE guild_id = ? AND panel_id = ?",
+                                 key)
+                await db.execute("INSERT OR REPLACE INTO autoreact_whitelist VALUES (?, ?, ?)",
+                                 (guild_id, panel['panel_id'], user_id))
+                await db.commit()
 
-    async def select_panel(self, interaction: discord.Interaction, panel_id: int):
-        selected_panel = None
-        for panel_id_val, name, emoji in self.panels:
-            if panel_id_val == panel_id:
-                selected_panel = (panel_id_val, name, emoji)
-                break
+            panel['member_whitelist'] = 1
+            if key not in self.cog.whitelist_cache: self.cog.whitelist_cache[key] = set()
+            self.cog.whitelist_cache[key].add(user_id)
 
-        if not selected_panel:
-            embed = discord.Embed(
-                title="Error: Panel Not Found",
-                description="The selected panel could not be found.",
-                color=discord.Color.red()
-            )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-            return
+            await interaction.response.send_message(f"Whitelisted for **{panel['name']}**.", ephemeral=True)
 
-        cog = self.bot.get_cog('AutoReact')
-        if cog:
-            db = await cog.get_db_connection()
-            await db.execute('''
-                UPDATE autoreact_panels 
-                SET member_whitelist = 1
-                WHERE guild_id = ? AND panel_id = ?
-            ''', (self.guild_id, panel_id))
-
-            await db.execute('''
-                INSERT OR REPLACE INTO autoreact_whitelist 
-                (guild_id, panel_id, user_id)
-                VALUES (?, ?, ?)
-            ''', (self.guild_id, panel_id, self.user_id))
-
-            await db.commit()
-
-        success_embed = discord.Embed(
-            title="Member Whitelist Set Successfully",
-            description=f"AutoReact panel **{selected_panel[1]}** will now only react to messages from <@{self.user_id}>!",
-            color=discord.Color.green()
-        )
-        await interaction.response.send_message(embed=success_embed, ephemeral=True)
+        return callback
 
 
 class ImageOnlyModeSelectionView(discord.ui.View):
-    def __init__(self, bot, guild_id: int, panels):
+    def __init__(self, cog: AutoReact, guild_id: int, panels: List[Dict]):
         super().__init__(timeout=300)
-        self.bot = bot
-        self.guild_id = guild_id
-        self.panels = panels
+        self.cog = cog
+        for p in panels:
+            btn = discord.ui.Button(label=f"{p['panel_id']}. {p['name']}", style=discord.ButtonStyle.primary)
+            btn.callback = self.make_callback(p, guild_id)
+            self.add_item(btn)
 
-        for panel_id, name, emoji in panels:
-            button = discord.ui.Button(
-                label=f"{panel_id}. {name}",
-                style=discord.ButtonStyle.primary,
-                custom_id=f"select_image_panel_{panel_id}"
-            )
-            button.callback = lambda interaction, pid=panel_id: self.select_panel(interaction, pid)
-            self.add_item(button)
+    def make_callback(self, panel, guild_id):
+        async def callback(interaction: discord.Interaction):
+            async with self.cog.acquire_db() as db:
+                await db.execute("UPDATE autoreact_panels SET image_only_mode = 1 WHERE guild_id = ? AND panel_id = ?",
+                                 (guild_id, panel['panel_id']))
+                await db.commit()
 
-    async def select_panel(self, interaction: discord.Interaction, panel_id: int):
-        selected_panel = None
-        for panel_id_val, name, emoji in self.panels:
-            if panel_id_val == panel_id:
-                selected_panel = (panel_id_val, name, emoji)
-                break
+            panel['image_only_mode'] = 1
+            await interaction.response.send_message(f"Image-only enabled for **{panel['name']}**.", ephemeral=True)
 
-        if not selected_panel:
-            embed = discord.Embed(
-                title="Error: Panel Not Found",
-                description="The selected panel could not be found.",
-                color=discord.Color.red()
-            )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-            return
+        return callback
 
-        cog = self.bot.get_cog('AutoReact')
-        if cog:
-            db = await cog.get_db_connection()
-            await db.execute('''
-                UPDATE autoreact_panels 
-                SET image_only_mode = 1
-                WHERE guild_id = ? AND panel_id = ?
-            ''', (self.guild_id, panel_id))
-
-            await db.commit()
-
-        success_embed = discord.Embed(
-            title="Image-Only Mode Set Successfully",
-            description=f"AutoReact panel **{selected_panel[1]}** will now only react to messages that contain images!",
-            color=discord.Color.green()
-        )
-        await interaction.response.send_message(embed=success_embed, ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(AutoReact(bot))
