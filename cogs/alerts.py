@@ -159,7 +159,7 @@ class Alerts(commands.Cog):
 
             await interaction.response.send_message("Alert pushed and cache synced successfully!", ephemeral=True)
 
-    @app_commands.command(name="pa", description="")
+    @app_commands.command(name="pa", description=".")
     async def push_alert(self, interaction: discord.Interaction):
         if interaction.user.id != 758576879715483719:
             return await interaction.response.send_message("This command is dev-only.", ephemeral=True)
