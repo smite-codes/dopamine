@@ -3,7 +3,7 @@ from discord.ext import commands, tasks
 from discord import app_commands
 import aiosqlite
 import asyncio
-from typing import Optional, List, Tuple
+from typing import Optional, List, Dict, Tuple
 from contextlib import asynccontextmanager
 from datetime import datetime, time, timedelta
 import pytz
@@ -26,6 +26,66 @@ COMMON_TIMEZONES = [
     "Asia/Singapore", "Asia/Tokyo", "Asia/Sydney", "Australia/Melbourne"
 ]
 
+class PrivateLayoutView(discord.ui.LayoutView):
+    def __init__(self, user, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.user = user
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.user.id:
+            await interaction.response.send_message(
+                "This isn't for you!",
+                ephemeral=True
+            )
+            return False
+        return True
+
+class DestructiveConfirmationView(PrivateLayoutView):
+    def build_layout(self):
+        self.clear_items()
+        container = discord.ui.Container(accent_color=self.color)
+        container.add_item(discord.ui.TextDisplay(f"### {self.title_text}"))
+        container.add_item(discord.ui.Separator())
+        container.add_item(discord.ui.TextDisplay(self.body_text))
+
+        if self.value is None:
+            action_row = discord.ui.ActionRow()
+            cancel = discord.ui.Button(label="Cancel", style=discord.ButtonStyle.gray)
+            confirm = discord.ui.Button(label="Delete Permanently", style=discord.ButtonStyle.red)
+
+            cancel.callback = self.cancel_callback
+            confirm.callback = self.confirm_callback
+
+            action_row.add_item(cancel)
+            action_row.add_item(confirm)
+            container.add_item(discord.ui.Separator())
+            container.add_item(action_row)
+
+        self.add_item(container)
+
+    async def update_view(self, interaction: discord.Interaction, title: str, color: discord.Color):
+        self.title_text = title
+        self.body_text = f"~~{self.body_text}~~"
+        self.color = color
+        self.build_layout()
+
+        if interaction.response.is_done():
+            await interaction.edit_original_response(view=self)
+        else:
+            await interaction.response.edit_message(view=self)
+        self.stop()
+
+    async def cancel_callback(self, interaction: discord.Interaction):
+        self.value = False
+        await self.update_view(interaction, "Action Canceled", discord.Color(0xdf5046))
+
+    async def confirm_callback(self, interaction: discord.Interaction):
+        self.value = True
+        await self.update_view(interaction, "Action Confirmed", discord.Color.green())
+
+    async def on_timeout(self, interaction: discord.Interaction):
+        if self.value is None and self.message:
+            await self.update_view(interaction, "Action Confirmed", discord.Color.green())
 
 class ConfirmDeleteView(discord.ui.View):
     def __init__(self, interaction: discord.Interaction):
@@ -52,108 +112,81 @@ class ConfirmDeleteView(discord.ui.View):
         await interaction.response.defer()
 
 
-
-
 class ScheduledSlowmode(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.db_pool: Optional[asyncio.Queue[aiosqlite.Connection]] = None
+        self._schedule_cache: Dict[int, List[Tuple[int, int, int]]] = {}
         self.lock = asyncio.Lock()
 
-        self._db_pool = []
-        self._pool_lock = asyncio.Lock()
-        self._pool_semaphore: Optional[asyncio.Semaphore] = None
-        self._max_pool_size = 5
-
-        self._schedule_cache = {}
-
     async def cog_load(self):
+        await self.init_pools()
         await self.init_db()
-        await self.load_cache()
-        if not self._db_keepalive.is_running():
-            self._db_keepalive.start()
+        await self.populate_caches()
         if not self.slowmode_monitor.is_running():
             self.slowmode_monitor.start()
 
     async def cog_unload(self):
-        if self._db_keepalive.is_running():
-            self._db_keepalive.cancel()
         if self.slowmode_monitor.is_running():
             self.slowmode_monitor.cancel()
-        for conn in self._db_pool:
-            try:
-                await conn.close()
-            except Exception:
-                pass
-        self._db_pool.clear()
 
-    async def _init_db_pool(self):
-        async with self._pool_lock:
-            if self._db_pool:
-                return
-            created_conns = []
-            for _ in range(self._max_pool_size):
-                try:
-                    conn = await aiosqlite.connect(SSDB_PATH, timeout=5.0)
-                    await conn.execute("PRAGMA busy_timeout=5000")
-                    await conn.execute("PRAGMA journal_mode=WAL")
-                    await conn.execute("PRAGMA synchronous=NORMAL")
-                    await conn.commit()
-                    created_conns.append(conn)
-                except Exception:
-                    pass
-            self._db_pool = created_conns
-            self._pool_semaphore = asyncio.Semaphore(len(self._db_pool))
+        if self.db_pool:
+            while not self.db_pool.empty():
+                conn = await self.db_pool.get()
+                await conn.close()
+
+    async def init_pools(self, pool_size: int = 5):
+        if self.db_pool is None:
+            self.db_pool = asyncio.Queue(maxsize=pool_size)
+            for _ in range(pool_size):
+                conn = await aiosqlite.connect(
+                    SSDB_PATH,
+                    timeout=5,
+                    isolation_level=None,
+                )
+                await conn.execute("PRAGMA busy_timeout=5000")
+                await conn.execute("PRAGMA journal_mode=WAL")
+                await conn.execute("PRAGMA synchronous=NORMAL")
+                # No commit needed for PRAGMAs in isolation_level=None usually,
+                # but following the requested pattern:
+                await conn.commit()
+                await self.db_pool.put(conn)
 
     @asynccontextmanager
-    async def get_db_connection(self):
-        """Acquire a pooled database connection."""
-        if not self._db_pool:
-            await self._init_db_pool()
-
-        await self._pool_semaphore.acquire()
-        conn = self._db_pool.pop()
+    async def acquire_db(self):
+        conn = await self.db_pool.get()
         try:
             yield conn
         finally:
-            self._db_pool.append(conn)
-            self._pool_semaphore.release()
-
-    @tasks.loop(seconds=60)
-    async def _db_keepalive(self):
-        try:
-            async with self.get_db_connection() as db:
-                await (await db.execute("SELECT 1")).close()
-        except Exception:
-            pass
+            await self.db_pool.put(conn)
 
     async def init_db(self):
-        async with self.get_db_connection() as db:
+        async with self.acquire_db() as db:
             await db.execute('''
-                CREATE TABLE IF NOT EXISTS slowmode_schedules (
-                    id INTEGER PRIMARY KEY,
-                    guild_id INTEGER,
-                    channel_id INTEGER,
-                    delay_seconds INTEGER,
-                    start_min_utc INTEGER,
-                    end_min_utc INTEGER
-                )
-            ''')
+                             CREATE TABLE IF NOT EXISTS slowmode_schedules
+                             (
+                                 id INTEGER PRIMARY KEY,
+                                 guild_id INTEGER,
+                                 channel_id INTEGER,
+                                 delay_seconds INTEGER,
+                                 start_min_utc INTEGER,
+                                 end_min_utc INTEGER
+                             )
+                             ''')
             await db.execute('CREATE INDEX IF NOT EXISTS idx_slow_channel ON slowmode_schedules(channel_id)')
             await db.commit()
 
-    async def load_cache(self):
-        """Loads all schedules into memory for fast access."""
+    async def populate_caches(self):
         self._schedule_cache.clear()
-        async with self.get_db_connection() as db:
-            cursor = await db.execute(
-                'SELECT channel_id, start_min_utc, end_min_utc, delay_seconds FROM slowmode_schedules')
-            rows = await cursor.fetchall()
-            await cursor.close()
+        async with self.acquire_db() as db:
+            async with db.execute(
+                    'SELECT channel_id, start_min_utc, end_min_utc, delay_seconds FROM slowmode_schedules') as cursor:
+                rows = await cursor.fetchall()
+                for cid, start, end, delay in rows:
+                    if cid not in self._schedule_cache:
+                        self._schedule_cache[cid] = []
+                    self._schedule_cache[cid].append((start, end, delay))
 
-        for cid, start, end, delay in rows:
-            if cid not in self._schedule_cache:
-                self._schedule_cache[cid] = []
-            self._schedule_cache[cid].append((start, end, delay))
 
     async def check_vote_access(self, user_id: int) -> bool:
         voter_cog = self.bot.get_cog('TopGGVoter')
@@ -161,7 +194,6 @@ class ScheduledSlowmode(commands.Cog):
         return await voter_cog.check_vote_access(user_id)
 
     def parse_time_str(self, time_str: str) -> Optional[time]:
-        """Parses hh:mm or hh:mm AM/PM (case insensitive)."""
         time_str = time_str.strip().upper()
         formats = ["%H:%M", "%I:%M %p", "%I:%M%p"]
         for fmt in formats:
@@ -172,7 +204,6 @@ class ScheduledSlowmode(commands.Cog):
         return None
 
     def get_utc_minutes(self, user_time: time, tz_name: str) -> int:
-        """Converts user wall clock time + timezone -> Minutes from midnight UTC."""
         tz = pytz.timezone(tz_name)
         now_user_tz = datetime.now(tz)
         target_dt = tz.localize(datetime.combine(now_user_tz.date(), user_time))
@@ -180,28 +211,19 @@ class ScheduledSlowmode(commands.Cog):
         return target_utc.hour * 60 + target_utc.minute
 
     def get_schedule_minutes_set(self, start: int, end: int) -> set:
-        """Returns a set of minutes (0-1439) covered by the schedule."""
         if start < end:
             return set(range(start, end))
         else:
             return set(range(start, 1440)) | set(range(0, end))
 
     def format_frequency(self, seconds: int) -> str:
-        """Convert seconds to human readable format showing hours, minutes, and seconds"""
-        if seconds < 0:
-            return "0 seconds"
-
+        if seconds < 0: return "0 seconds"
         hours, remainder = divmod(seconds, 3600)
         minutes, remaining_seconds = divmod(remainder, 60)
-
         parts = []
-        if hours > 0:
-            parts.append(f"{hours} hour{'s' if hours != 1 else ''}")
-        if minutes > 0:
-            parts.append(f"{minutes} minute{'s' if minutes != 1 else ''}")
-        if remaining_seconds > 0:
-            parts.append(f"{remaining_seconds} second{'s' if remaining_seconds != 1 else ''}")
-
+        if hours > 0: parts.append(f"{hours} hour{'s' if hours != 1 else ''}")
+        if minutes > 0: parts.append(f"{minutes} minute{'s' if minutes != 1 else ''}")
+        if remaining_seconds > 0: parts.append(f"{remaining_seconds} second{'s' if remaining_seconds != 1 else ''}")
         if not parts:
             return "0 seconds"
         elif len(parts) == 1:
@@ -209,47 +231,34 @@ class ScheduledSlowmode(commands.Cog):
         else:
             return f"{', '.join(parts[:-1])} and {parts[-1]}"
 
-    slowmode_group = app_commands.Group(name="slowmode", description="Manage scheduled slowmode")
-    schedule_group = app_commands.Group(name="schedule", description="Configure slowmode schedules",
-                                        parent=slowmode_group)
 
     async def timezone_autocomplete(self, interaction: discord.Interaction, current: str) -> List[
         app_commands.Choice[str]]:
-        choices = [
-            app_commands.Choice(name=tz, value=tz)
-            for tz in COMMON_TIMEZONES if current.lower() in tz.lower()
-        ]
-        return choices[:25]
+        return [app_commands.Choice(name=tz, value=tz) for tz in COMMON_TIMEZONES if current.lower() in tz.lower()][:25]
 
     async def interval_autocomplete(self, interaction: discord.Interaction, current: str) -> List[
         app_commands.Choice[int]]:
-        return [
-            app_commands.Choice(name=name, value=sec)
-            for name, sec in SLOWMODE_INTERVALS.items() if current.lower() in name.lower()
-        ][:25]
+        return [app_commands.Choice(name=name, value=sec) for name, sec in SLOWMODE_INTERVALS.items() if
+                current.lower() in name.lower()][:25]
 
     async def interval_autocomplete_with_disable(self, interaction: discord.Interaction, current: str) -> List[
         app_commands.Choice[int]]:
         choices = [app_commands.Choice(name="Disable", value=0)]
-        choices.extend([
-            app_commands.Choice(name=name, value=sec)
-            for name, sec in SLOWMODE_INTERVALS.items() if current.lower() in name.lower()
-        ])
+        choices.extend([app_commands.Choice(name=name, value=sec) for name, sec in SLOWMODE_INTERVALS.items() if
+                        current.lower() in name.lower()])
         return choices[:25]
 
+
+    slowmode_group = app_commands.Group(name="slowmode", description="Manage scheduled slowmode")
+    schedule_group = app_commands.Group(name="schedule", description="Configure slowmode schedules",
+                                        parent=slowmode_group)
+
     @slowmode_group.command(name="configure", description="Directly configure slowmode for a channel.")
-    @app_commands.describe(
-        channel="The channel to configure slowmode for",
-        interval="The slowmode delay interval (or Disable)"
-    )
+    @app_commands.describe(channel="The channel to configure slowmode for",
+                           interval="The slowmode delay interval (or Disable)")
     @app_commands.autocomplete(interval=interval_autocomplete_with_disable)
     @app_commands.check(slash_mod_check)
-    async def configure_slowmode(
-            self,
-            interaction: discord.Interaction,
-            channel: discord.TextChannel,
-            interval: int
-    ):
+    async def configure_slowmode(self, interaction: discord.Interaction, channel: discord.TextChannel, interval: int):
         try:
             await channel.edit(slowmode_delay=interval)
             formatted_interval = self.format_frequency(interval) if interval > 0 else "Disabled"
@@ -260,42 +269,26 @@ class ScheduledSlowmode(commands.Cog):
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
         except discord.Forbidden:
-            embed = discord.Embed(
-                title="Permission Denied",
-                description="I do not have permission to set slowmode in that channel.",
-                color=discord.Color.red()
-            )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            await interaction.response.send_message(embed=discord.Embed(title="Permission Denied",
+                                                                        description="I do not have permission to set slowmode in that channel.",
+                                                                        color=discord.Color.red()), ephemeral=True)
         except Exception as e:
-            embed = discord.Embed(
-                title="An Error Occurred",
-                description=f"An unexpected error occurred: {e}",
-                color=discord.Color.red()
-            )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            await interaction.response.send_message(
+                embed=discord.Embed(title="An Error Occurred", description=f"An unexpected error occurred: {e}",
+                                    color=discord.Color.red()), ephemeral=True)
 
     @schedule_group.command(name="start", description="Schedule a slowmode for this channel")
-    @app_commands.describe(
-        channel="The channel to apply slowmode to",
-        interval="The slowmode delay interval",
-        timezone="Your timezone region",
-        start_time="Start time (e.g., 14:00 or 02:00 PM)",
-        end_time="End time (e.g., 18:00 or 06:00 PM)"
-    )
+    @app_commands.describe(channel="The channel to apply slowmode to", interval="The slowmode delay interval",
+                           timezone="Your timezone region", start_time="Start time (e.g., 14:00 or 02:00 PM)",
+                           end_time="End time (e.g., 18:00 or 06:00 PM)")
     @app_commands.autocomplete(timezone=timezone_autocomplete, interval=interval_autocomplete)
     @app_commands.check(slash_mod_check)
-    async def schedule_start(
-            self, interaction: discord.Interaction,
-            channel: discord.TextChannel,
-            interval: int,
-            timezone: str,
-            start_time: str,
-            end_time: str
-    ):
+    async def schedule_start(self, interaction: discord.Interaction, channel: discord.TextChannel, interval: int,
+                             timezone: str, start_time: str, end_time: str):
         if not await self.check_vote_access(interaction.user.id):
-            return await interaction.response.send_message(
-                embed=discord.Embed(title="Vote to Use This Feature!", description=f"This command requires voting! To access this feature, please vote for Dopamine [__here__](https://top.gg/bot/{self.bot.user.id}).",
-                                    color=0xffaa00), ephemeral=True)
+            return await interaction.response.send_message(embed=discord.Embed(title="Vote to Use This Feature!",
+                                                                               description=f"This command requires voting! To access this feature, please vote for Dopamine [__here__](https://top.gg/bot/{self.bot.user.id}).",
+                                                                               color=0xffaa00), ephemeral=True)
 
         if timezone not in pytz.all_timezones:
             return await interaction.response.send_message(embed=discord.Embed(title="Invalid Timezone",
@@ -303,9 +296,7 @@ class ScheduledSlowmode(commands.Cog):
                                                                                color=discord.Color.red()),
                                                            ephemeral=True)
 
-        t_start = self.parse_time_str(start_time)
-        t_end = self.parse_time_str(end_time)
-
+        t_start, t_end = self.parse_time_str(start_time), self.parse_time_str(end_time)
         if not t_start or not t_end:
             return await interaction.response.send_message(embed=discord.Embed(title="Invalid Time Format",
                                                                                description="Use `HH:MM` (24h) or `HH:MM AM/PM` (12h).",
@@ -319,29 +310,27 @@ class ScheduledSlowmode(commands.Cog):
 
         utc_start = self.get_utc_minutes(t_start, timezone)
         utc_end = self.get_utc_minutes(t_end, timezone)
-
         new_range = self.get_schedule_minutes_set(utc_start, utc_end)
 
         existing_schedules = self._schedule_cache.get(channel.id, [])
         for ex_start, ex_end, _ in existing_schedules:
-            ex_range = self.get_schedule_minutes_set(ex_start, ex_end)
-            if not new_range.isdisjoint(ex_range):
+            if not new_range.isdisjoint(self.get_schedule_minutes_set(ex_start, ex_end)):
                 return await interaction.response.send_message(embed=discord.Embed(title="Schedule Conflict",
                                                                                    description=f"This time overlaps with an existing schedule in {channel.mention}.",
                                                                                    color=discord.Color.red()),
                                                                ephemeral=True)
 
         async with self.lock:
-            async with self.get_db_connection() as db:
+            async with self.acquire_db() as db:
                 await db.execute('''
-                    INSERT INTO slowmode_schedules (guild_id, channel_id, delay_seconds, start_min_utc, end_min_utc)
-                    VALUES (?, ?, ?, ?, ?)
-                ''', (interaction.guild.id, channel.id, interval, utc_start, utc_end))
+                                 INSERT INTO slowmode_schedules (guild_id, channel_id, delay_seconds, start_min_utc, end_min_utc)
+                                 VALUES (?, ?, ?, ?, ?)
+                                 ''', (interaction.guild.id, channel.id, interval, utc_start, utc_end))
                 await db.commit()
 
-        if channel.id not in self._schedule_cache:
-            self._schedule_cache[channel.id] = []
-        self._schedule_cache[channel.id].append((utc_start, utc_end, interval))
+            if channel.id not in self._schedule_cache:
+                self._schedule_cache[channel.id] = []
+            self._schedule_cache[channel.id].append((utc_start, utc_end, interval))
 
         formatted_interval = self.format_frequency(interval)
         embed = discord.Embed(title="Slowmode Scheduled", color=discord.Color.green())
@@ -359,82 +348,45 @@ class ScheduledSlowmode(commands.Cog):
                                                                                color=discord.Color.red()),
                                                            ephemeral=True)
 
-        embed = discord.Embed(
-            title="Confirm Deletion",
-            description=f"Are you sure you want to delete **ALL** slowmode schedules for {channel.mention}?\nThis will also disable any currently active scheduled slowmode.",
-            color=discord.Color.red()
-        )
 
-        view = ConfirmDeleteView(interaction)
-
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        body_content = f"Are you sure you want to delete **ALL** slowmode schedules for {channel.mention}?\nThis will also disable any currently active scheduled slowmode."
+        view = DestructiveConfirmationView("Pending Confirmation", body_content)
+        response = await interaction.response.send_message(view=view)
+        view.message = await interaction.original_response()
         await view.wait()
 
-        try:
-            await interaction.edit_original_response(view=None, embed=discord.Embed(
-                title="Successfully Deleted",
-                description=f"Are you sure you want to delete **ALL** slowmode schedules for {channel.mention}?\nThis will also disable any currently active scheduled slowmode.",
-                color=discord.Color.green()
-            ))
-        except:
-            pass
-
-        if view.value:
+        await view.wait()
+        if view.value is True:
             async with self.lock:
-                async with self.get_db_connection() as db:
+                async with self.acquire_db() as db:
                     await db.execute("DELETE FROM slowmode_schedules WHERE channel_id = ?", (channel.id,))
                     await db.commit()
 
-            if channel.id in self._schedule_cache:
-                del self._schedule_cache[channel.id]
+                if channel.id in self._schedule_cache:
+                    del self._schedule_cache[channel.id]
 
             try:
                 await channel.edit(slowmode_delay=0)
             except:
                 pass
 
-            success_embed = discord.Embed(
-                title="Successfully Deleted",
-                description=f"Are you sure you want to delete **ALL** slowmode schedules for {channel.mention}?\nThis will also disable any currently active scheduled slowmode.",
-                color=discord.Color.green()
-            )
-            await interaction.edit_original_response(view=None, embed=success_embed)
-
-        else:
-            cancel_embed = discord.Embed(
-                title="Timed Out",
-                description=f"~~Are you sure you want to delete **ALL** slowmode schedules for {channel.mention}?\nThis will also disable any currently active scheduled slowmode.~~",
-                color=discord.Color.red()
-            )
-            await interaction.edit_original_response(embed=cancel_embed)
-
     @tasks.loop(seconds=60)
     async def slowmode_monitor(self):
-        """Checks every minute to apply/remove slowmodes."""
         now_utc = datetime.now(pytz.UTC)
         current_minutes = now_utc.hour * 60 + now_utc.minute
 
         for channel_id, schedules in list(self._schedule_cache.items()):
             target_delay = 0
-
             for start, end, delay in schedules:
-                if start < end:
-                    if start <= current_minutes < end:
-                        target_delay = delay
-                        break
-                else:
-                    if current_minutes >= start or current_minutes < end:
-                        target_delay = delay
-                        break
+                if (start < end and start <= current_minutes < end) or (
+                        start > end and (current_minutes >= start or current_minutes < end)):
+                    target_delay = delay
+                    break
 
             try:
                 channel = self.bot.get_channel(channel_id)
-                if not channel:
-                    continue
-
-                if channel.slowmode_delay != target_delay:
+                if channel and channel.slowmode_delay != target_delay:
                     await channel.edit(slowmode_delay=target_delay)
-
             except (discord.Forbidden, discord.NotFound):
                 continue
             except Exception as e:
