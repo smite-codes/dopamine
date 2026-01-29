@@ -280,7 +280,7 @@ class CV2Helper(PrivateLayoutView):
         show_text = bool(self.data.get("show_text", 1))
         show_image = bool(self.data.get("show_image", 1))
 
-        container = discord.ui.Container(accent_color=discord.Color.blue())
+        container = discord.ui.Container()
         container.add_item(discord.ui.TextDisplay("## Welcome Feature Dashboard"))
 
         btn_main = discord.ui.Button(
