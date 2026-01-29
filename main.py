@@ -37,7 +37,7 @@ intents.message_content = True
 intents.members = True
 intents.reactions = True
 
-bot = commands.Bot(command_prefix="!!", intents=intents, help_command=None)
+bot = commands.Bot(command_prefix="!!", intents=intents, help_command=None, member_cache_flags=discord.MemberCacheFlags(voice=True, joined=False), chunk_guilds_at_startup=False)
 bot.synced = False
 
 async def setup_hook():
