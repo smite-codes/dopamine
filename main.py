@@ -65,19 +65,18 @@ async def setup_hook():
             s, lambda: asyncio.create_task(signal_handler())
         )
 
-    async def signal_handler():
-        print("\nBot shutdown requested...")
-        extensions = list(bot.extensions.keys())
-        for extension in extensions:
-            try:
-                await bot.unload_extension(extension)
-                print(f"> Unloaded {extension} successfully")
-            except Exception as e:
-                print(f"Error unloading {extension}: {e}")
+async def signal_handler():
+    print("\nBot shutdown requested...")
+    extensions = list(bot.extensions.keys())
+    for extension in extensions:
+        try:
+            await bot.unload_extension(extension)
+            print(f"> Unloaded {extension} successfully")
+        except Exception as e:
+            print(f"Error unloading {extension}: {e}")
 
-        print("👋 Goodbye!")
-        await bot.close()
-        sys.exit(0)
+    print("👋 Goodbye!")
+    await bot.close()
 
 bot.setup_hook = setup_hook
 
