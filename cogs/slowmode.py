@@ -41,6 +41,15 @@ class PrivateLayoutView(discord.ui.LayoutView):
         return True
 
 class DestructiveConfirmationView(PrivateLayoutView):
+    def __init__(self, title_text: str, body_text: str, color: discord.Color = None):
+        super().__init__(timeout=30)
+        self.value = None
+        self.title_text = title_text
+        self.body_text = body_text
+        self.color = color
+        self.message: discord.Message = None
+        self.build_layout()
+
     def build_layout(self):
         self.clear_items()
         container = discord.ui.Container(accent_color=self.color)
@@ -85,31 +94,7 @@ class DestructiveConfirmationView(PrivateLayoutView):
 
     async def on_timeout(self, interaction: discord.Interaction):
         if self.value is None and self.message:
-            await self.update_view(interaction, "Action Confirmed", discord.Color.green())
-
-class ConfirmDeleteView(discord.ui.View):
-    def __init__(self, interaction: discord.Interaction):
-        super().__init__(timeout=60)
-        self.interaction = interaction
-        self.value = None
-
-    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.red)
-    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id != self.interaction.user.id:
-            await interaction.response.send_message("This isn't your confirmation!", ephemeral=True)
-            return
-        self.value = False
-        self.stop()
-        await interaction.response.defer()
-
-    @discord.ui.button(label="Confirm", style=discord.ButtonStyle.green)
-    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id != self.interaction.user.id:
-            await interaction.response.send_message("This isn't your confirmation!", ephemeral=True)
-            return
-        self.value = True
-        self.stop()
-        await interaction.response.defer()
+            await self.update_view(interaction, "Timed Out", discord.Color(0xdf5046))
 
 
 class ScheduledSlowmode(commands.Cog):
