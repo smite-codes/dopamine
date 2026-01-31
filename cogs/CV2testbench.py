@@ -16,7 +16,7 @@ class PrivateLayoutView(discord.ui.LayoutView):
             return False
         return True
 
-class RepeatingMessagesDashboard(PrivateLayoutView):
+class ModerationDashboard(PrivateLayoutView):
     def __init__(self):
         super().__init__(timeout=None)
         self.build_layout()
@@ -24,160 +24,112 @@ class RepeatingMessagesDashboard(PrivateLayoutView):
     def build_layout(self):
         self.clear_items()
         container = discord.ui.Container()
-        container.add_item(discord.ui.TextDisplay("## Repeating Messages Dashboard"))
-        container.add_item(discord.ui.TextDisplay(
-            "This is the dashboard for Dopamine's Repeating Messages feature. Repeating Messages are repeatedly sent in a channel at a set frequency.\nUse the buttons below to create a new Repeating Message, or to Manage existing ones.")) # Do NOT change this text at all
+        container.add_item(discord.ui.TextDisplay("## Dopamine Moderation Dashboard"))
         container.add_item(discord.ui.Separator())
+        container.add_item(discord.ui.TextDisplay("Dopamine replaces traditional mute/kick/ban commands with a **12-point escalation system**. "
+            "Moderators assign points, and the bot handles the math and the punishment automatically.\n\n"
+            "**Default Punishment Logic:**\n"
+            "* 1 Point: Warning\n"
+            "* 2-5 Points: Incremental Timeouts (15m to 1h)\n"
+            "* 6-11 Points: Incremental Bans (12h to 7d)\n"
+            "* 12 Points: Permanent Ban\n> The points system is completely customizable, and you can customize point amounts for each action or disable an action completely.\n\n"
+            
+            "**Core Features:**\n"
+            "* **Decay:** Points drop by 1 every set frequency (default: two weeks) if no new infractions occur.\n"
+            "* **Rejoin Policy:** Users unbanned via the bot start a set point amount (default: four) to prevent immediate repeat offenses by keeping them on thin ice."))
+        container.add_item(discord.ui.Separator())
+        values_btn = discord.ui.Button(label="Customise Points System", style=discord.ButtonStyle.primary)
+        settings_btn = discord.ui.Button(label="Settings", style=discord.ButtonStyle.secondary)
 
         row = discord.ui.ActionRow()
-        btn_create = discord.ui.Button(label="Create", style=discord.ButtonStyle.primary)
-        btn_create.callback = print() # To be implemented
-        btn_manage = discord.ui.Button(label="Manage & Edit", style=discord.ButtonStyle.secondary)
-        btn_manage.callback = print() # To be implemented, this will edit the message and show the ManagePage.
-        row.add_item(btn_create)
-        row.add_item(btn_manage)
+        row.add_item(values_btn)
+        row.add_item(settings_btn)
         container.add_item(row)
         self.add_item(container)
 
-class ChannelSelectView(PrivateLayoutView):
-    def __init__(self, user):
-        super().__init__(user, timeout=None)
-        self.build_layout()
 
-    def build_layout(self):
-        container = discord.ui.Container()
-
-        self.select = discord.ui.ChannelSelect(
-            placeholder="Select a channel...",
-            channel_types=[discord.ChannelType.text],
-            min_values=1, max_values=1
-        )
-        self.select.callback = self.select_callback # To be implemented
-
-        row = discord.ui.ActionRow()
-        row.add_item(self.select)
-        container.add_item(discord.ui.TextDisplay("### Select a channel for the Repeating Message:"))
-        container.add_item(row)
-        self.add_item(container)
-
-class ManagePage(PrivateLayoutView):
+class SettingsPage(PrivateLayoutView):
     def __init__(self):
-        super().__init__( timeout=None)
+        super().__init__(timeout=None)
         self.build_layout()
 
     def build_layout(self):
         self.clear_items()
-        panels = print() # placeholder
         container = discord.ui.Container()
-        container.add_item(discord.ui.TextDisplay("## Manage Repeating Messages"))
-        container.add_item(discord.ui.TextDisplay(
-            "List of all existing repeating messages. Click Edit to configure details or the channel."))
+        container.add_item(discord.ui.TextDisplay("## Moderation Settings"))
         container.add_item(discord.ui.Separator())
-
-        if not panels:
-            container.add_item(discord.ui.TextDisplay("*No Repeating Messages found.*"))
-        else:
-            for idx, panel in enumerate(panels, 1):
-                p_title = panel['name']
-                chan_id = panel['channel_id']
-
-                btn_edit = discord.ui.Button(label="Edit", style=discord.ButtonStyle.secondary)
-                btn_edit.callback = print() # To be implemented, this will send the user to the EditPage for the specific Repeating Message.
-                display_text = f"{idx}. **{p_title}** in <#{chan_id}>"
-                container.add_item(discord.ui.Section(discord.ui.TextDisplay(display_text), accessory=btn_edit))
-                container.add_item(discord.ui.TextDisplay("-# Page [current page number] of [total pages]"))
-
-            container.add_item(discord.ui.Separator())
-            row = discord.ui.ActionRow() # Paginator system because users may have so many repeating messages that it cant fit into this one container.
-            left_btn = discord.ui.Button(label="Re◀️", style=discord.ButtonStyle.primary)
-            left_btn.callback = print()  # To be implemented
-            row.add_item(left_btn)
-            go_btn = discord.ui.Button(label="Return to Dashboard", style=discord.ButtonStyle.secondary)
-            go_btn.callback = print()  # To be implemented
-            row.add_item(go_btn)
-            right_btn = discord.ui.Button(label="▶️", style=discord.ButtonStyle.primary)
-            right_btn.callback = print()  # To be implemented
-            row.add_item(right_btn)
-            container.add_item(row)
+        dm_btn = discord.ui.Button(label=f"{'Disable' if 1==1 else 'Enable'} DMs", style=discord.ButtonStyle.secondary if 1==1 else discord.ButtonStyle.primary)
+        log_btn = discord.ui.Button(label=f"{'Disable' if 1==1 else 'Enable'} Mod Logs", style=discord.ButtonStyle.secondary if 1==1 else discord.ButtonStyle.primary)
+        simple_btn = discord.ui.Button(label=f"{'Disable' if 1 == 1 else 'Enable'} Simple Mode",
+                                    style=discord.ButtonStyle.secondary if 1==1 else discord.ButtonStyle.primary)
+        decay_btn = discord.ui.Button(label=f"Edit Decay Frequency", style=discord.ButtonStyle.secondary)
+        rejoin_btn = discord.ui.Button(label=f"Edit Rejoin Points", style=discord.ButtonStyle.secondary)
+        container.add_item(discord.ui.Section(discord.ui.TextDisplay("* **Decay Frequency:** Edit the frequency at which one point is decayed from a user. Set to 0 to disable decay feature."), accessory=decay_btn))
+        container.add_item(
+            discord.ui.Section(discord.ui.TextDisplay(
+                """* **Simple Mode:**\n  * **Terminology:** Replaces "point" with "warning" and replaces `/point` command with `/warn` (single strike at a time only)\n  * The following simple five-strike preset is applied:\n    * 1 warning: Verbal warning, no punishment\n    * 2 warnings: 60-minute timeout/mute\n    * 3 warnings: 12-hour ban\n    * 4 warnings: 7-day ban\n    * 5 warnings: Permanent ban\n  * **Best For:** Users seeking a traditional moderation feel while retaining Dopamine’s decay and rejoin policies without the learning curve. (Note: Customization of actions and point/warning thresholds is still available in Simple Mode!)"""),
+                accessory=simple_btn))
+        container.add_item(
+            discord.ui.Section(discord.ui.TextDisplay(
+                "* **Mod Logs:** Logs Moderation actions in the logging channel (if a channel is set using `/logging set`)."),
+                accessory=log_btn))
+        container.add_item(discord.ui.Section(discord.ui.TextDisplay(
+            "* **Rejoin Points:** Edit the number of points that a user is given upon joining after being banned. Set it to `preserve` to preserve their points and leave it unchanged upon joining."),
+                                              accessory=rejoin_btn))
+        container.add_item(
+            discord.ui.Section(discord.ui.TextDisplay("* **Punishment DMs:** Sends a DM to the user who is punished."),
+                               accessory=dm_btn))
 
         container.add_item(discord.ui.Separator())
-        row = discord.ui.ActionRow()
         return_btn = discord.ui.Button(label="Return to Dashboard", style=discord.ButtonStyle.secondary)
-        return_btn.callback = print() # To be implemented
-        row.add_item(return_btn)
+
+        container.add_item(discord.ui.ActionRow(return_btn))
+        self.add_item(container)
+
+
+class CustomisationPage(PrivateLayoutView):
+    def __init__(self):
+        super().__init__(timeout=None)
+        self.build_layout()
+
+    def build_layout(self):
+        self.clear_items()
+        container = discord.ui.Container()
+        container.add_item(discord.ui.TextDisplay("## Customise Points System"))
+        container.add_item(discord.ui.TextDisplay("The list below shows the moderation actions, with their respective points needed to trigger that action. For example, if 1-hour timeout is 3 points, then a user will be timed out for 1 hour once they accumulate 3 points."))
+        container.add_item(discord.ui.Separator())
+        edit_btn = discord.ui.Button(label="Edit Points", style=discord.ButtonStyle.secondary)
+        container.add_item(discord.ui.Section(discord.ui.TextDisplay("1. 38-Minute Timeout: **3** points"), accessory=edit_btn))
+        container.add_item(discord.ui.Separator())
+        create_btn = discord.ui.Button(label="Create New Action", style=discord.ButtonStyle.primary)
+        toggle_delete_btn = discord.ui.Button(label=f"{'Enable' if 1==1 else 'Disable'} Delete Mode", style=discord.ButtonStyle.danger if 1==1 else discord.ButtonStyle.secondary)
+        row = discord.ui.ActionRow()
+        row.add_item(create_btn)
+        row.add_item(toggle_delete_btn)
         container.add_item(row)
         self.add_item(container)
 
-class EditPage(PrivateLayoutView):
-    def __init__(self, user, cog, guild_id, panel_data):
-        super().__init__(user, timeout=None)
-        self.panel_data = panel_data
-        self.build_layout()
-
-    def build_layout(self):
-        self.clear_items()
-        container = discord.ui.Container()
-        container.add_item(discord.ui.TextDisplay(f"## Edit: {['Name']}"))
-        container.add_item(discord.ui.Separator())
-        details = (
-            f"**State:** Active or Inactive with Green or Red circle emoji\n"
-            f"**Channel:** placeholder\n"
-            f"**Frequency:** placeholder\n"
-            f"**Frequency:** `placeholder\n"
-            f"**Message Content:**\n```Message content```"
-        )
-        container.add_item(discord.ui.TextDisplay(details))
-        container.add_item(discord.ui.Separator())
-
-        row1 = discord.ui.ActionRow()
-        btn_state = discord.ui.Button(label=f"Active or Inactive",
-                                     style=discord.ButtonStyle.primary if 1==1 else discord.ButtonStyle.secondary) # 1==1 is placeholder for the toggle
-        btn_state.callback = self.toggle_state_callback # To be implemented
-        btn_edit_message = discord.ui.Button(label="Edit Message Content", style=discord.ButtonStyle.secondary)
-        btn_edit_message.callback = self.edit_message_callback # To be Implemented
-        btn_edit_channel = discord.ui.Button(label="Edit Channel", style=discord.ButtonStyle.secondary)
-        btn_edit_channel.callback = self.edit_channel_callback # To be implemented, this shall send the channel edit select view above.
-        btn_delete = discord.ui.Button(label="Delete", style=discord.ButtonStyle.danger) # Shows the destructive confirmation view.
-        btn_delete.callback = self.delete_callback
-        btn_frequency = discord.ui.Button(label="Edit Frequency", style=discord.ButtonStyle.secondary)
-        btn_frequency.callback = self.edit_duration_callback
-
-        row1.add_item(btn_state)
-        row1.add_item(btn_edit_message)
-        row1.add_item(btn_edit_channel)
-        row1.add_item(btn_frequency)
-        row1.add_item(btn_delete)
-        container.add_item(row1)
-
-        back_row = discord.ui.ActionRow()
-        btn_back = discord.ui.Button(label="Return to Manage Menu", style=discord.ButtonStyle.secondary)
-        btn_back.callback = self.back_callback
-        back_row.add_item(btn_back)
-        container.add_item(back_row)
-
-        self.add_item(container)
-
-class DestructiveConfirmationView(PrivateLayoutView):
-    def __init__(self, user, name, cog, guild_id):
-        super().__init__(user, timeout=30)
-        self.name = name
-        self.cog = cog
-        self.guild_id = guild_id
+class ConfirmationView(PrivateLayoutView):
+    def __init__(self, title_text: str, body_text: str, color: discord.Color = None):
+        super().__init__(timeout=30)
         self.value = None
-        self.title_text = "Delete Repeating Message"
-        self.body_text = f"Are you sure you want to permanently delete the repeating message **{name}**? This cannot be undone."
+        self.title_text = title_text
+        self.body_text = body_text
+        self.color = color
+        self.message: discord.Message = None
         self.build_layout()
+
     def build_layout(self):
         self.clear_items()
-        container = discord.ui.Container()
+        container = discord.ui.Container(accent_color=self.color)
         container.add_item(discord.ui.TextDisplay(f"### {self.title_text}"))
         container.add_item(discord.ui.Separator())
         container.add_item(discord.ui.TextDisplay(self.body_text))
 
         if self.value is None:
             action_row = discord.ui.ActionRow()
-            cancel = discord.ui.Button(label="Cancel", style=discord.ButtonStyle.gray)
-            confirm = discord.ui.Button(label="Reset to Default", style=discord.ButtonStyle.red)
+            cancel = discord.ui.Button(label="Cancel", style=discord.ButtonStyle.red)
+            confirm = discord.ui.Button(label="Confirm", style=discord.ButtonStyle.green)
 
             cancel.callback = self.cancel_callback
             confirm.callback = self.confirm_callback
@@ -212,6 +164,7 @@ class DestructiveConfirmationView(PrivateLayoutView):
     async def on_timeout(self, interaction: discord.Interaction):
         if self.value is None and self.message:
             await self.update_view(interaction, "Timed Out", discord.Color(0xdf5046))
+            self.stop()
 
 
 class CV2TestCog(commands.Cog):
@@ -220,7 +173,7 @@ class CV2TestCog(commands.Cog):
 
     @app_commands.command(name="cv2test", description="Tests Discord Components V2 layout")
     async def cv2test(self, interaction: discord.Interaction):
-        view = ManagePage()
+        view = CustomisationPage()
         await interaction.response.send_message(
             view=view,
         )
