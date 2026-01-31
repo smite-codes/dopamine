@@ -459,8 +459,10 @@ class SettingsPage(PrivateLayoutView):
 
 
 class CustomisationPage(PrivateLayoutView):
-    def __init__(self, user, cog, delete_mode=False):
+    def __init__(self, user, cog, page=1, delete_mode=False):
         super().__init__(user, cog, timeout=None)
+        self.page = page
+        self.items_per_page = 5
         self.delete_mode = delete_mode
         self.build_layout()
 
@@ -472,61 +474,86 @@ class CustomisationPage(PrivateLayoutView):
         is_simple = settings.get("simple_mode", 0) == 1
         term = "Warning" if is_simple else "Point"
 
-        actions = self.cog.action_cache.get(guild_id, [])
-        actions.sort(key=lambda x: x['points'])
+        all_actions = self.cog.action_cache.get(guild_id, [])
+        all_actions.sort(key=lambda x: x['points'])
+
+        total_items = len(all_actions)
+        total_pages = (total_items + self.items_per_page - 1) // self.items_per_page if total_items > 0 else 1
+
+        start_idx = (self.page - 1) * self.items_per_page
+        end_idx = start_idx + self.items_per_page
+        current_actions = all_actions[start_idx:end_idx]
 
         container = discord.ui.Container()
         container.add_item(discord.ui.TextDisplay(f"## Customise {term} System"))
         container.add_item(discord.ui.TextDisplay(
-            f"The list below shows the moderation actions, with their respective {term.lower()}s needed to trigger that action."))
+            f"List of actions triggered at specific {term.lower()} thresholds."))
         container.add_item(discord.ui.Separator())
 
-        if not actions:
-            container.add_item(discord.ui.TextDisplay("No actions configured."))
+        if not all_actions:
+            container.add_item(discord.ui.TextDisplay("*No actions configured.*"))
+        else:
+            for i, action in enumerate(current_actions, start_idx + 1):
+                act_name = action['action_type'].title()
+                dur_str = format_duration_str(action['duration'])
 
-        for i, action in enumerate(actions, 1):
-            act_name = action['action_type'].title()
-            dur_str = format_duration_str(action['duration'])
-            if act_name == "Ban":
-                if action['duration'] == 0:
-                    display = "Permanent Ban"
+                if act_name == "Ban":
+                    display = "Permanent Ban" if action['duration'] == 0 else f"{dur_str} Ban"
+                elif act_name == "Timeout":
+                    display = f"{dur_str} Timeout"
                 else:
-                    display = f"{dur_str} Ban"
-            elif act_name == "Timeout":
-                display = f"{dur_str} Timeout"
-            else:
-                display = act_name
+                    display = act_name
 
-            btn_label = "Delete" if self.delete_mode else f"Edit {term}s"
-            btn_style = discord.ButtonStyle.danger if self.delete_mode else discord.ButtonStyle.secondary
-            btn = discord.ui.Button(label=btn_label, style=btn_style)
-            btn.callback = self.make_action_callback(action, len(actions))
+                btn_label = "Delete" if self.delete_mode else "Edit"
+                btn_style = discord.ButtonStyle.danger if self.delete_mode else discord.ButtonStyle.secondary
 
-            container.add_item(discord.ui.Section(discord.ui.TextDisplay(
-                f"{i}. {display}: **{action['points']}** {term.lower()}{'s' if action['points'] != 1 else ''}"),
-                                                  accessory=btn))
+                btn = discord.ui.Button(label=btn_label, style=btn_style)
+                btn.callback = self.make_action_callback(action, total_items)
 
-        container.add_item(discord.ui.Separator())
+                display_text = f"{i}. **{display}**: `{action['points']}` {term.lower()}{'s' if action['points'] != 1 else ''}"
+                container.add_item(discord.ui.Section(discord.ui.TextDisplay(display_text), accessory=btn))
 
+            container.add_item(discord.ui.TextDisplay(f"-# Page {self.page} of {total_pages}"))
+            container.add_item(discord.ui.Separator())
+
+            nav_row = discord.ui.ActionRow()
+
+            left_btn = discord.ui.Button(label="◀️", style=discord.ButtonStyle.primary, disabled=(self.page <= 1))
+            left_btn.callback = self.prev_page
+            nav_row.add_item(left_btn)
+
+            go_btn = discord.ui.Button(label="Go To Page", style=discord.ButtonStyle.secondary,
+                                       disabled=(total_pages == 1))
+            go_btn.callback = self.go_to_page_callback
+            nav_row.add_item(go_btn)
+
+            right_btn = discord.ui.Button(label="▶️", style=discord.ButtonStyle.primary,
+                                          disabled=(self.page >= total_pages))
+            right_btn.callback = self.next_page
+            nav_row.add_item(right_btn)
+
+            container.add_item(nav_row)
+
+        control_row = discord.ui.ActionRow()
         create_btn = discord.ui.Button(label="Create New Action", style=discord.ButtonStyle.primary,
-                                       disabled=len(actions) >= 20)
+                                       disabled=len(all_actions) >= 20)
         create_btn.callback = self.create_action
 
-        toggle_delete_btn = discord.ui.Button(label=f"{'Disable' if self.delete_mode else 'Enable'} Delete Mode",
-                                              style=discord.ButtonStyle.danger if self.delete_mode else discord.ButtonStyle.secondary)
+        toggle_delete_btn = discord.ui.Button(
+            label=f"{'Disable' if self.delete_mode else 'Enable'} Delete Mode",
+            style=discord.ButtonStyle.danger if self.delete_mode else discord.ButtonStyle.secondary
+        )
         toggle_delete_btn.callback = self.toggle_delete
 
-        home_btn = discord.ui.Button(label="Return to Dashboard", style=discord.ButtonStyle.secondary)
-        home_btn.callback = self.return_home
+        control_row.add_item(create_btn)
+        control_row.add_item(toggle_delete_btn)
+        container.add_item(control_row)
 
-        row = discord.ui.ActionRow()
-        row.add_item(create_btn)
-        row.add_item(toggle_delete_btn)
-        container.add_item(row)
-        row = discord.ui.ActionRow()
-        row.add_item(home_btn)
         container.add_item(discord.ui.Separator())
-        container.add_item(row)
+        return_btn = discord.ui.Button(label="Return to Dashboard", style=discord.ButtonStyle.secondary)
+        return_btn.callback = self.return_home
+        container.add_item(discord.ui.ActionRow(return_btn))
+
         self.add_item(container)
 
     def make_action_callback(self, action, total_actions):
@@ -539,22 +566,69 @@ class CustomisationPage(PrivateLayoutView):
                     await db.execute("DELETE FROM actions WHERE id = ?", (action['id'],))
                     await db.commit()
                 await self.cog.refresh_action_cache(interaction.guild.id)
-                await interaction.response.edit_message(view=CustomisationPage(self.user, self.cog, delete_mode=True))
+                all_actions = self.cog.action_cache.get(interaction.guild.id, [])
+                max_pages = (len(all_actions) + self.items_per_page - 1) // self.items_per_page
+                self.page = min(self.page, max_pages) if max_pages > 0 else 1
+
+                self.build_layout()
+                await interaction.response.edit_message(view=self)
             else:
                 await interaction.response.send_modal(
                     ActionModal(self.cog, interaction.guild.id, is_create=False, existing_action_id=action['id']))
 
         return callback
 
+    async def prev_page(self, interaction: discord.Interaction):
+        self.page -= 1
+        self.build_layout()
+        await interaction.response.edit_message(view=self)
+
+    async def next_page(self, interaction: discord.Interaction):
+        self.page += 1
+        self.build_layout()
+        await interaction.response.edit_message(view=self)
+
+    async def go_to_page_callback(self, interaction: discord.Interaction):
+        all_actions = self.cog.action_cache.get(interaction.guild.id, [])
+        total_pages = (len(all_actions) + self.items_per_page - 1) // self.items_per_page
+        await interaction.response.send_modal(GoToPageModal(self, total_pages))
+
     async def create_action(self, interaction: discord.Interaction):
         await interaction.response.send_modal(ActionModal(self.cog, interaction.guild.id, is_create=True))
 
     async def toggle_delete(self, interaction: discord.Interaction):
-        await interaction.response.edit_message(
-            view=CustomisationPage(self.user, self.cog, delete_mode=not self.delete_mode))
+        self.delete_mode = not self.delete_mode
+        self.build_layout()
+        await interaction.response.edit_message(view=self)
 
     async def return_home(self, interaction: discord.Interaction):
         await interaction.response.edit_message(view=ModerationDashboard(self.user, self.cog))
+
+
+class GoToPageModal(discord.ui.Modal):
+    def __init__(self, parent_view, total_pages: int):
+        super().__init__(title="Jump to Page")
+        self.parent_view = parent_view
+        self.total_pages = total_pages
+        self.page_input = discord.ui.TextInput(
+            label=f"Page Number (1-{total_pages})",
+            placeholder="Enter a page number...",
+            min_length=1, max_length=5, required=True
+        )
+        self.add_item(self.page_input)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            page_num = int(self.page_input.value)
+            if 1 <= page_num <= self.total_pages:
+                self.parent_view.page = page_num
+                self.parent_view.build_layout()
+                await interaction.response.edit_message(view=self.parent_view)
+            else:
+                await interaction.response.send_message(f"Enter a number between 1 and {self.total_pages}.",
+                                                        ephemeral=True)
+        except ValueError:
+            await interaction.response.send_message("Invalid input.", ephemeral=True)
 
 
 class Points(commands.Cog):
