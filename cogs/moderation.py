@@ -82,7 +82,7 @@ class ConfirmationView(PrivateLayoutView):
         self.value = None
         self.title_text = title_text
         self.body_text = body_text
-        self.color = color or discord.Color.blue()
+        self.color = color
         self.message: discord.Message = None
         self.build_layout()
 
@@ -197,7 +197,7 @@ class ActionModal(discord.ui.Modal):
                     "Point Conflict",
                     f"An action already exists at **{points_val}** points. Do you want to add this action anyway, triggering BOTH?"
                 )
-                await interaction.response.send_message(view=view, ephemeral=True)
+                await interaction.response.send_message(view=view)
                 view.message = await interaction.original_response()
                 await view.wait()
                 if not view.value:
