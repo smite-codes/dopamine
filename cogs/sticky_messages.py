@@ -89,7 +89,7 @@ class DestructiveConfirmationView(PrivateLayoutView):
 
         self.add_item(container)
 
-    async def update_view(self, interaction: discord.Interaction, title: str):
+    async def update_view(self, interaction: discord.Interaction, title: str, color: discord.Color):
         self.title_text = title
         self.body_text = f"~~{self.body_text}~~"
         self.build_layout()
@@ -148,8 +148,8 @@ class EditPage(PrivateLayoutView):
         btn_delete.callback = self.delete_callback
         btn_duration = discord.ui.Button(label="Edit Duration", style=discord.ButtonStyle.secondary)
         btn_duration.callback = self.edit_duration_callback
-        btn_bots = discord.ui.Button(label=f"Include Bots: {'ON' if bots_enabled else 'OFF'}",
-                                     style=discord.ButtonStyle.primary if bots_enabled else discord.ButtonStyle.secondary)
+        btn_bots = discord.ui.Button(label=f"{'Disable' if bots_enabled else 'Enable'} Include Bots",
+                                     style=discord.ButtonStyle.secondary if bots_enabled else discord.ButtonStyle.primary)
         btn_bots.callback = self.toggle_bots_callback
 
         row1.add_item(btn_edit_message)
@@ -163,6 +163,7 @@ class EditPage(PrivateLayoutView):
         btn_back = discord.ui.Button(label="Return to Manage Menu", style=discord.ButtonStyle.secondary)
         btn_back.callback = self.back_callback
         back_row.add_item(btn_back)
+        container.add_item(discord.ui.Separator())
         container.add_item(back_row)
 
         self.add_item(container)
@@ -209,15 +210,29 @@ class EditPage(PrivateLayoutView):
 
 
 class ManagePage(PrivateLayoutView):
-    def __init__(self, user, cog, guild_id):
+    def __init__(self, user, cog, guild_id, page=1):
         super().__init__(user, timeout=None)
         self.cog = cog
         self.guild_id = guild_id
+        self.page = page
+        self.items_per_page = 5
         self.build_layout()
 
     def build_layout(self):
         self.clear_items()
-        panels = self.cog.get_guild_panels(self.guild_id)
+
+        # Adapt to Sticky Message cache structure
+        all_panels = self.cog.panel_cache.get(self.guild_id, {})
+        sorted_keys = sorted(all_panels.keys())
+        total_items = len(sorted_keys)
+        total_pages = (total_items + self.items_per_page - 1) // self.items_per_page if total_items > 0 else 1
+
+        start_idx = (self.page - 1) * self.items_per_page
+        end_idx = start_idx + self.items_per_page
+        current_keys = sorted_keys[start_idx:end_idx]
+
+        panels = [all_panels[k] for k in current_keys]
+
         container = discord.ui.Container()
         container.add_item(discord.ui.TextDisplay("## Manage Sticky Messages"))
         container.add_item(discord.ui.TextDisplay(
@@ -227,30 +242,109 @@ class ManagePage(PrivateLayoutView):
         if not panels:
             container.add_item(discord.ui.TextDisplay("*No sticky messages found.*"))
         else:
-            for idx, panel in enumerate(panels, 1):
+            for idx, panel in enumerate(panels, start_idx + 1):
                 p_title = panel['title']
                 chan_id = panel['channel_id']
 
-                async def edit_nav(interaction, data=panel):
-                    view = EditPage(self.user, self.cog, self.guild_id, data)
-                    await interaction.response.edit_message(view=view)
-
                 btn_edit = discord.ui.Button(label="Edit", style=discord.ButtonStyle.secondary)
-                btn_edit.callback = edit_nav
+                btn_edit.callback = self.create_edit_callback(panel)
+
                 display_text = f"{idx}. **{p_title}** in <#{chan_id}>"
                 container.add_item(discord.ui.Section(discord.ui.TextDisplay(display_text), accessory=btn_edit))
 
+            container.add_item(discord.ui.TextDisplay(f"-# Page {self.page} of {total_pages}"))
+            container.add_item(discord.ui.Separator())
+
+            # Pagination Row
+            nav_row = discord.ui.ActionRow()
+
+            left_btn = discord.ui.Button(label="◀️", style=discord.ButtonStyle.primary, disabled=(self.page <= 1))
+            left_btn.callback = self.prev_page
+            nav_row.add_item(left_btn)
+
+            go_btn = discord.ui.Button(label="Go To Page", style=discord.ButtonStyle.secondary,
+                                       disabled=(total_pages == 1))
+            go_btn.callback = self.go_to_page_callback
+            nav_row.add_item(go_btn)
+
+            right_btn = discord.ui.Button(label="▶️", style=discord.ButtonStyle.primary,
+                                          disabled=(self.page >= total_pages))
+            right_btn.callback = self.next_page
+            nav_row.add_item(right_btn)
+
+            container.add_item(nav_row)
+
+        # Footer Row (Return Button)
         container.add_item(discord.ui.Separator())
-        row = discord.ui.ActionRow()
+        footer_row = discord.ui.ActionRow()
         return_btn = discord.ui.Button(label="Return to Dashboard", style=discord.ButtonStyle.secondary)
-        return_btn.callback = self.return_callback
-        row.add_item(return_btn)
-        container.add_item(row)
+        return_btn.callback = self.return_home
+        footer_row.add_item(return_btn)
+        container.add_item(footer_row)
+
         self.add_item(container)
 
-    async def return_callback(self, interaction: discord.Interaction):
+    def create_edit_callback(self, panel_data):
+        async def callback(interaction: discord.Interaction):
+            view = EditPage(self.user, self.cog, self.guild_id, panel_data)
+            await interaction.response.edit_message(view=view)
+
+        return callback
+
+    async def go_to_page_callback(self, interaction: discord.Interaction):
+        all_panels = self.cog.panel_cache.get(self.guild_id, {})
+        total_pages = (len(all_panels) + self.items_per_page - 1) // self.items_per_page
+        modal = GoToPageModal(self, total_pages)
+        await interaction.response.send_modal(modal)
+
+    async def prev_page(self, interaction: discord.Interaction):
+        self.page -= 1
+        self.build_layout()
+        await interaction.response.edit_message(view=self)
+
+    async def next_page(self, interaction: discord.Interaction):
+        self.page += 1
+        self.build_layout()
+        await interaction.response.edit_message(view=self)
+
+    async def return_home(self, interaction: discord.Interaction):
+        # Match the dashboard name in your sticky_messages.py
         view = StickyDashboard(self.user, self.cog, self.guild_id)
         await interaction.response.edit_message(view=view)
+
+
+class GoToPageModal(discord.ui.Modal):
+    def __init__(self, parent_view: "ManagePage", total_pages: int):
+        super().__init__(title="Jump to Page")
+        self.parent_view = parent_view
+        self.total_pages = total_pages
+
+        self.page_input = discord.ui.TextInput(
+            label=f"Page Number (1-{total_pages})",
+            placeholder="Enter a page number...",
+            min_length=1,
+            max_length=5,
+            required=True,
+        )
+        self.add_item(self.page_input)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            page_num = int(self.page_input.value)
+            if 1 <= page_num <= self.total_pages:
+                self.parent_view.page = page_num
+                self.parent_view.build_layout()
+                await interaction.response.edit_message(view=self.parent_view)
+            else:
+                await interaction.response.send_message(
+                    f"Please enter a number between 1 and {self.total_pages}.",
+                    ephemeral=True
+                )
+        except ValueError:
+            await interaction.response.send_message(
+                "Invalid input. Please enter a valid whole number.",
+                ephemeral=True
+            )
 
 
 class ChannelSelectView(PrivateLayoutView):
@@ -274,7 +368,8 @@ class ChannelSelectView(PrivateLayoutView):
 
         row = discord.ui.ActionRow()
         row.add_item(self.select)
-        container.add_item(discord.ui.TextDisplay("### Select a channel for the Sticky Message:"))
+        container.add_item(discord.ui.TextDisplay("### Step 1: Select a Channel"))
+        container.add_item(discord.ui.TextDisplay("Choose the channel where you want the sticky message to appear:"))
         container.add_item(row)
         self.add_item(container)
 
@@ -296,8 +391,8 @@ class ChannelSelectView(PrivateLayoutView):
             self.cog.active_channels.pop(old_channel_id, None)
             self.cog.active_channels[selected_channel.id] = panel
 
-            await interaction.response.edit_message(
-                content=f"✅ Moved **{self.panel_title}** to {selected_channel.mention}", view=None)
+            await interaction.response.send_message(
+                content=f"Moved **{self.panel_title}** to {selected_channel.mention}", ephemeral=True)
 
 
             new_channel = self.cog.bot.get_channel(selected_channel.id)
