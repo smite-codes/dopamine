@@ -103,8 +103,18 @@ class StarboardDashboard(PrivateLayoutView):
 
     async def toggle_callback(self, interaction: discord.Interaction):
         settings = self.cog.settings_cache.get(self.guild_id, {})
-        new_state = 0 if settings.get("enabled", 0) else 1
+        current_state = bool(settings.get("enabled", 0))
+        current_channel = settings.get("starboard_channel_id")
+
+        if not current_state and not current_channel:
+            await self.cog.update_guild_setting(self.guild_id, enabled=1)
+
+            view = ChannelSelectView(self, self.user, self.cog, self.guild_id, interaction)
+            return await interaction.response.edit_message(view=view)
+
+        new_state = 0 if current_state else 1
         await self.cog.update_guild_setting(self.guild_id, enabled=new_state)
+
         self.build_layout()
         await interaction.response.edit_message(view=self)
 
