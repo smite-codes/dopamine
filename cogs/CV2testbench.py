@@ -16,7 +16,7 @@ class PrivateLayoutView(discord.ui.LayoutView):
             return False
         return True
 
-class TrackerDashboard(PrivateLayoutView):
+class OwnerDashboard(PrivateLayoutView):
     def __init__(self):
         super().__init__(timeout=None)
         self.build_layout()
@@ -24,42 +24,23 @@ class TrackerDashboard(PrivateLayoutView):
     def build_layout(self):
         self.clear_items()
         container = discord.ui.Container()
-        toggle_btn = discord.ui.Button(label=f"{'Disable' if 1==1 else 'Enable'}", style=discord.ButtonStyle.secondary if 1==1 else discord.ButtonStyle.primary)
-        container.add_item(discord.ui.Section(discord.ui.TextDisplay("## Member Tracker Dashboard"), accessory=toggle_btn))
+        container.add_item((discord.ui.TextDisplay("## Owner Dashboard")))
 
-        container.add_item(discord.ui.TextDisplay("Member Tracker tracks the number of members in the server, and posts a new message in a set channel when the count goes up. You can set a goal and a celebratory message will be posted in the same channel."))
-        if 1==1:
-            container.add_item(discord.ui.Separator())
-            container.add_item(discord.ui.TextDisplay("**Channel:** {channel.mention if channel else 'Unknown'}"))
-            container.add_item(discord.ui.TextDisplay("**Channel:** {channel.mention if channel else 'Unknown'}"))
-            if data['member_goal']:
-                container.add_item(discord.ui.TextDisplay("### Goal\n{data['member_goal']} members"))
-            if data['custom_format']:
-                container.add_item(discord.ui.TextDisplay("### Format\n```{data['custom_format']}```"))
-            if data['color']:
-                container.add_item(discord.ui.TextDisplay("Placeholder for colour"))
+        container.add_item(discord.ui.Separator())
+        cogtoggle_btn = discord.ui.Button(label=f"{'Unload' if 1==1 else 'Load'}", style=discord.ButtonStyle.secondary if 1==1 else discord.ButtonStyle.primary) # 1==1 is the check that's true if the cog is loaded.
+        container.add_item(discord.ui.Section(discord.ui.TextDisplay("1. thenameofthecog.py"), accessory=cogtoggle_btn)) # there will be ONE of these sections for every single cog/extension/whatever.
 
-            container.add_item(discord.ui.Separator())
-            container.add_item(discord.ui.TextDisplay("""### ➤ DOCUMENTATION\n\n**Available Variables**\n* `{count}` - Current member count of your server\n* `{remaining}` - Members remaining to reach the goal\n* `{goal}` - The member goal you've set\n* `{server}` - Name of your server\n**Example Formats**\n* `🎉 {_count} members! Only {remainingl} more to go!`\n* `{server} reached {count}! Goal: {goal}`\n**Notes**\n* You can customize it however you want, you don't have to use these examples!\n* {remaining} will only work if a goal is set."""))
+        restart_btn = discord.ui.Button(label="Restart Bot", style=discord.ButtonStyle.secondary) # This button restarts main.py
+        shutdown_btn = discord.ui.Button(label="Shutdown Bot", style=discord.ButtonStyle.primary) # This shuts down the bot gracefully.
+        sync_btn = discord.ui.Button(label="Sync Slash Commands", style=discord.ButtonStyle.primary) #This syncs slash commands through await bot.tree.sync()
 
-            container.add_item(discord.ui.Separator())
-            edit_btn = discord.ui.Button(label="Edit", style=discord.ButtonStyle.primary)
-            bot_btn = discord.ui.Button(label=f"{"Don't Include Bots' if 2==2 else 'Include Bots"}", style=discord.ButtonStyle.secondary if 2==2 else discord.ButtonStyle.primary)
-            row = discord.ui.ActionRow()
-            row.add_item(edit_btn)
-            row.add_item(bot_btn)
-            container.add_item(row)
-            container.add_item(discord.ui.Separator())
+        row = discord.ui.ActionRow()
 
-            container.add_item(discord.ui.TextDisplay("### Reset to Default"))
-
-            btn_reset = discord.ui.Button(label="Reset", style=discord.ButtonStyle.secondary)
-            btn_reset.callback = self.reset_button_callback
-
-            container.add_item(discord.ui.Section(
-                discord.ui.TextDisplay("Click the Reset button to reset everything to default."),
-                accessory=btn_reset
-            ))
+        row.add_item(sync_btn)
+        row.add_item(shutdown_btn)
+        row.add_item(restart_btn)
+        container.add_item(discord.ui.Separator())
+        container.add_item(row)
 
         self.add_item(container)
 
