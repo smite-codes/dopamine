@@ -652,10 +652,16 @@ class Points(commands.Cog):
     async def cog_unload(self):
         self.unban_loop.stop()
         self.decay_loop.stop()
+
         if self.db_pool:
             while not self.db_pool.empty():
-                conn = await self.db_pool.get()
-                await conn.close()
+                try:
+                    conn = self.db_pool.get_nowait()
+                    await conn.close()
+                except asyncio.QueueEmpty:
+                    break
+                except Exception as e:
+                    print(f"Error closing connection during unload: {e}")
 
     async def init_pools(self, pool_size: int = 5):
         if self.db_pool is None:

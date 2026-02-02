@@ -25,13 +25,16 @@ class TempHideCog(commands.Cog):
         await self.populate_caches()
         self.bot.add_view(RevealView(self, 0))
 
-
     async def cog_unload(self):
-
         if self.db_pool:
-            while not self.db_pool.empty():
-                conn = await self.db_pool.get()
-                await conn.close()
+            for _ in range(self._max_pool_size):
+                try:
+                    conn = await asyncio.wait_for(self.db_pool.get(), timeout=2.0)
+                    await conn.close()
+                except asyncio.TimeoutError:
+                    continue
+                except Exception:
+                    pass
 
     async def init_pools(self, pool_size: int = 5):
         if self.db_pool is None:

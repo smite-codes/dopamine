@@ -24,17 +24,17 @@ class Notes(commands.Cog):
 
     async def cog_unload(self):
         try:
-            self.bot.tree.remove_command(note_group.name, type=discord.app_commands.AppCommandType.chat_input)
+            self.bot.tree.remove_command(note_group.name)
         except Exception:
             pass
 
         if self.db_pool is not None:
             while not self.db_pool.empty():
-                conn = await self.db_pool.get()
                 try:
+                    conn = self.db_pool.get_nowait()
                     await conn.close()
-                except Exception:
-                    pass
+                except (asyncio.QueueEmpty, Exception):
+                    break
             self.db_pool = None
 
     async def init_pools(self, pool_size: int = 5):
@@ -49,7 +49,6 @@ class Notes(commands.Cog):
                 await conn.execute("PRAGMA busy_timeout=5000")
                 await conn.execute("PRAGMA journal_mode=WAL")
                 await conn.execute("PRAGMA synchronous=NORMAL")
-                await conn.execute("PRAGMA cache_size=-65536")
                 await conn.execute("PRAGMA foreign_keys=ON")
                 await conn.commit()
                 await self.db_pool.put(conn)
@@ -106,9 +105,8 @@ class Notes(commands.Cog):
         def __init__(self, cog, old_name: str, old_content: str):
             super().__init__()
             self.cog = cog
-            self.old_name = old_name  # Keeping track of the original name for the DB query
+            self.old_name = old_name
 
-            # Define fields dynamically to set default values
             self.note_name = discord.ui.TextInput(
                 label="Note Name",
                 default=old_name,
@@ -204,7 +202,6 @@ class Notes(commands.Cog):
                     )
                     await db.commit()
 
-                # Update Cache
                 if user_id not in self.cog.notes_cache:
                     self.cog.notes_cache[user_id] = {}
                 self.cog.notes_cache[user_id][name] = content

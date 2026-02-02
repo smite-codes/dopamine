@@ -117,8 +117,15 @@ class ScheduledSlowmode(commands.Cog):
 
         if self.db_pool:
             while not self.db_pool.empty():
-                conn = await self.db_pool.get()
-                await conn.close()
+                try:
+                    conn = self.db_pool.get_nowait()
+                    await conn.close()
+                except asyncio.QueueEmpty:
+                    break
+                except Exception as e:
+                    print(f"Error closing pool connection: {e}")
+
+            self.db_pool = None
 
     async def init_pools(self, pool_size: int = 5):
         if self.db_pool is None:
@@ -132,8 +139,6 @@ class ScheduledSlowmode(commands.Cog):
                 await conn.execute("PRAGMA busy_timeout=5000")
                 await conn.execute("PRAGMA journal_mode=WAL")
                 await conn.execute("PRAGMA synchronous=NORMAL")
-                # No commit needed for PRAGMAs in isolation_level=None usually,
-                # but following the requested pattern:
                 await conn.commit()
                 await self.db_pool.put(conn)
 

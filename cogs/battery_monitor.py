@@ -21,7 +21,6 @@ class BatteryMonitor(commands.Cog):
         self._db_conn = None
 
     async def cog_load(self):
-        """Initialize the database table when the cog is loaded."""
         await self.init_battery_monitor_table()
         if not self.update_battery_monitor.is_running():
             self.update_battery_monitor.start()
@@ -29,15 +28,21 @@ class BatteryMonitor(commands.Cog):
             self._db_keepalive.start()
 
     async def cog_unload(self):
-        """Cancel the background task when the cog is unloaded."""
+        self.update_battery_monitor.cancel()
         if self._db_keepalive.is_running():
             self._db_keepalive.cancel()
-        self.update_battery_monitor.cancel()
+
         if self._db_conn:
-            await self._db_conn.close()
+            try:
+                await self._db_conn.close()
+            except Exception as e:
+                print(f"Error closing DB during unload: {e}")
+            finally:
+                self._db_conn = None
+
+        await asyncio.sleep(0)
 
     async def get_db_connection(self):
-        """Get a database connection with optimized settings for I/O performance"""
         if self._db_conn is None:
             max_retries = 5
             for attempt in range(max_retries):

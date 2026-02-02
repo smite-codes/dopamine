@@ -37,18 +37,18 @@ class HaikuDetector(commands.Cog):
         for task in self._worker_tasks:
             task.cancel()
 
-        while not self.haiku_queue.empty():
-            try:
-                self.haiku_queue.get_nowait()
-                self.haiku_queue.task_done()
-            except asyncio.QueueEmpty:
-                break
+        if self._worker_tasks:
+            await asyncio.gather(*self._worker_tasks, return_exceptions=True)
+        self._worker_tasks.clear()
 
-        for pool in (self.hd_pool, self.hwd_pool):
+        for pool_name, pool in [("HD", self.hd_pool), ("HWD", self.hwd_pool)]:
             if pool:
                 while not pool.empty():
-                    conn = await pool.get()
-                    await conn.close()
+                    try:
+                        conn = pool.get_nowait()
+                        await conn.close()
+                    except (asyncio.QueueEmpty, Exception) as e:
+                        print(f"Error closing {pool_name} connection: {e}")
 
     async def init_pools(self, pool_size: int = 5):
         if self.hd_pool is None:
@@ -142,7 +142,6 @@ class HaikuDetector(commands.Cog):
                 syllable_count = await self.count_message_syllables(message_content)
 
                 if syllable_count == 17:
-                    # Check for duplicate replies
                     already_replied = False
                     async for reply in message.channel.history(limit=50, after=message.created_at):
                         if (reply.author == self.bot.user and
@@ -421,7 +420,7 @@ class HaikuDetector(commands.Cog):
     @commands.has_permissions(manage_messages=True)
     async def view_haiku_words(self, ctx):
         if ctx.author.id != 758576879715483719:
-            return  # Silent fail or add original Access Denied embed
+            return
 
         words = sorted(self.haiku_word_cache.items())
         if not words:

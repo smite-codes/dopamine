@@ -39,12 +39,16 @@ class Alerts(commands.Cog):
     async def cog_unload(self):
         if self.db_pool is not None:
             while not self.db_pool.empty():
-                conn = await self.db_pool.get()
                 try:
+                    conn = self.db_pool.get_nowait()
                     await conn.close()
+                except asyncio.QueueEmpty:
+                    break
                 except Exception:
                     pass
             self.db_pool = None
+
+        self._reminder_cooldowns.clear()
 
     async def init_pools(self, pool_size: int = 5):
         if self.db_pool is None:

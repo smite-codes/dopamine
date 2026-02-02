@@ -221,7 +221,6 @@ class ManagePage(PrivateLayoutView):
     def build_layout(self):
         self.clear_items()
 
-        # Adapt to Sticky Message cache structure
         all_panels = self.cog.panel_cache.get(self.guild_id, {})
         sorted_keys = sorted(all_panels.keys())
         total_items = len(sorted_keys)
@@ -255,7 +254,6 @@ class ManagePage(PrivateLayoutView):
             container.add_item(discord.ui.TextDisplay(f"-# Page {self.page} of {total_pages}"))
             container.add_item(discord.ui.Separator())
 
-            # Pagination Row
             nav_row = discord.ui.ActionRow()
 
             left_btn = discord.ui.Button(label="◀️", style=discord.ButtonStyle.primary, disabled=(self.page <= 1))
@@ -274,7 +272,6 @@ class ManagePage(PrivateLayoutView):
 
             container.add_item(nav_row)
 
-        # Footer Row (Return Button)
         container.add_item(discord.ui.Separator())
         footer_row = discord.ui.ActionRow()
         return_btn = discord.ui.Button(label="Return to Dashboard", style=discord.ButtonStyle.secondary)
@@ -308,7 +305,6 @@ class ManagePage(PrivateLayoutView):
         await interaction.response.edit_message(view=self)
 
     async def return_home(self, interaction: discord.Interaction):
-        # Match the dashboard name in your sticky_messages.py
         view = StickyDashboard(self.user, self.cog, self.guild_id)
         await interaction.response.edit_message(view=view)
 
@@ -496,7 +492,7 @@ class DurationModal(discord.ui.Modal):
             await db.commit()
 
         self.cog.panel_cache[self.guild_id][self.title_name]['conversation_duration'] = val
-        self.parent_view.panel_data['conversation_duration'] = val  # Update view's local data
+        self.parent_view.panel_data['conversation_duration'] = val
 
         self.parent_view.build_layout()
         await interaction.response.edit_message(view=self.parent_view)
@@ -600,11 +596,21 @@ class StickyMessages(commands.Cog):
         if not self.sticky_monitor.is_running(): self.sticky_monitor.start()
 
     async def cog_unload(self):
-        if self.sticky_monitor.is_running(): self.sticky_monitor.cancel()
-        for t in self.sticky_tasks.values(): t.cancel()
+        if self.sticky_monitor.is_running():
+            self.sticky_monitor.cancel()
+
+        for t in self.sticky_tasks.values():
+            t.cancel()
+
         if self.db_pool:
             while not self.db_pool.empty():
-                await (await self.db_pool.get()).close()
+                try:
+                    conn = self.db_pool.get_nowait()
+                    await conn.close()
+                except asyncio.QueueEmpty:
+                    break
+                except Exception as e:
+                    print(f"Error closing sticky db connection: {e}")
 
     async def init_pools(self, pool_size=6):
         if self.db_pool is None:

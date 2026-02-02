@@ -6,7 +6,7 @@ from discord._types import ClientT
 from discord.ext import commands, tasks
 from typing import Dict, List, Optional, Set, Tuple
 import re
-from config import NFDB_PATH, DB_PATH #DB_PATH is points.db
+from config import NFDB_PATH, DB_PATH
 from utils.checks import slash_mod_check
 from contextlib import asynccontextmanager
 from utils.log import LoggingManager
@@ -148,12 +148,18 @@ class Nickname(commands.Cog):
         await self.load_serversettings_cache()
         await self.load_verified_cache()
 
-
     async def cog_unload(self):
         if self.db_pool is not None:
-            while not self.db_pool.empty():
-                conn = await self.db_pool.get()
-                await conn.close()
+            for _ in range(self.db_pool.qsize()):
+                try:
+                    conn = self.db_pool.get_nowait()
+                    await conn.close()
+                except asyncio.QueueEmpty:
+                    break
+                except Exception as e:
+                    print(f"Error closing connection during unload: {e}")
+
+            self.db_pool = None
 
     async def createpooledconnection(self, path: str) -> aiosqlite.Connection:
         max_retries = 5
@@ -168,7 +174,6 @@ class Nickname(commands.Cog):
                 await conn.execute("PRAGMA journal_mode=WAL")
                 await conn.execute("PRAGMA wal_autocheckout=1000")
                 await conn.execute("PRAGMA synchronous=NORMAL")
-                await conn.execute("PRAGMA cache_size=-64000")
                 await conn.execute("PRAGMA optimize")
                 await conn.commit()
                 return conn

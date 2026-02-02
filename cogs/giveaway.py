@@ -21,10 +21,10 @@ class GiveawayDraft:
     channel_id: int
     prize: str
     winners: int
-    end_time: int # Unix timestamp
+    end_time: int
     host_id: Optional[int] = None
     required_roles: List[int] = None
-    required_behaviour: int = 0 # 0 = All, 1 = One
+    required_behaviour: int = 0
     blacklisted_roles: List[int] = None
     extra_entries: List[int] = None
     winner_role: Optional[int] = None
@@ -35,7 +35,7 @@ class GiveawayDraft:
 class PrivateView(discord.ui.View):
     def __init__(self, user, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.user = user  # The person who triggered the command
+        self.user = user
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self.user.id:
@@ -696,10 +696,15 @@ class Giveaways(commands.Cog):
 
     async def cog_unload(self):
         self.check_giveaways.cancel()
+
         if self.db_pool is not None:
+            closing_tasks = []
             while not self.db_pool.empty():
                 conn = await self.db_pool.get()
-                await conn.close()
+                closing_tasks.append(conn.close())
+
+            if closing_tasks:
+                await asyncio.gather(*closing_tasks, return_exceptions=True)
 
     async def init_pools(self, pool_size: int = 5):
         if self.db_pool is None:
@@ -841,7 +846,7 @@ class Giveaways(commands.Cog):
                 member = guild.get_member(user_id)
                 if not member:
                     member = guild.fetch_member(user_id)
-                if not member: #how would this even happen? ugh not my problem to worry about
+                if not member:
                     pass
                 if member:
                     for role_id in extra_roles_list:
@@ -874,7 +879,7 @@ class Giveaways(commands.Cog):
                     winner_data
                 )
                 await db.commit()
-        whichone = "participant_cache" # Why separately? because we still need participant cache until this point. however, if we delay giveaway cache until here, the complex winner calculations can take time and the task loop check_giveaways may be triggered a second time, which won't be good!
+        whichone = "participant_cache"
         await self.mark_as_ended(giveaway_id, guild_id, whichone)
 
         guild = self.bot.get_guild(guild_id)

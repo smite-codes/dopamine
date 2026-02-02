@@ -24,6 +24,11 @@ class LoggingManager:
                 await conn.execute("PRAGMA synchronous = NORMAL")
                 await conn.commit()
                 await self.db_pool.put(conn)
+
+    async def close_pools(self):
+        if self.pool:
+            await self.pool.close()
+            self.pool = None
     @asynccontextmanager
     async def acquire_db(self):
         if self.db_pool is None:

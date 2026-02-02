@@ -85,6 +85,10 @@ class Logging(commands.Cog):
         await self.manager.init_db()
         await self.manager.populate_cache()
 
+    async def cog_unload(self):
+        if self.manager:
+            await self.manager.close_pools()
+
     log = app_commands.Group(name="logging", description="Manage logging feature.")
     @log.command(name="set", description="Set the logging channel for logs.")
     @app_commands.check(slash_mod_check)

@@ -60,7 +60,7 @@ class CreateRepeatingMessageModal(Modal):
             "guild_id": guild_id,
             "message_id": message_id,
             "name": self.name_input.value,
-            "channel_id": self.channel.id, # Using the channel from Step 1
+            "channel_id": self.channel.id,
             "message_content": self.content_input.value,
             "frequency_seconds": frequency_seconds,
             "next_send_time": current_time + frequency_seconds,
@@ -577,7 +577,7 @@ class DestructiveConfirmationView(PrivateLayoutView):
             action_row = discord.ui.ActionRow()
             cancel = discord.ui.Button(label="Cancel", style=discord.ButtonStyle.gray)
             confirm = discord.ui.Button(label="Delete Forever",
-                                        style=discord.ButtonStyle.danger)  # Changed label to be more appropriate than Reset to Default
+                                        style=discord.ButtonStyle.danger)
 
             cancel.callback = self.cancel_callback
             confirm.callback = self.confirm_callback
@@ -625,7 +625,6 @@ class DestructiveConfirmationView(PrivateLayoutView):
 
     async def on_timeout(self, interaction: discord.Interaction):
         if self.value is None:
-            # Just stop
             pass
 
 
@@ -648,8 +647,13 @@ class RepeatingMessages(commands.Cog):
 
         if self.db_pool:
             while not self.db_pool.empty():
-                conn = await self.db_pool.get()
-                await conn.close()
+                try:
+                    conn = self.db_pool.get_nowait()
+                    await conn.close()
+                except asyncio.QueueEmpty:
+                    break
+                except Exception as e:
+                    print(f"Error closing connection during unload: {e}")
 
     async def init_pools(self, pool_size: int = 5):
         if self.db_pool is None:

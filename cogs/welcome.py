@@ -110,7 +110,7 @@ class DestructiveConfirmationView(PrivateLayoutView):
         self.title_text = title_text
         self.body_text = body_text
         self.value = None
-        self.color = discord.Color(0xdf5046)  # Red initially
+        self.color = discord.Color(0xdf5046)
         self.build_layout()
 
     def build_layout(self):
@@ -444,6 +444,13 @@ class Welcome(commands.Cog):
         await self.init_db()
         await self.populate_caches()
 
+    async def cog_unload(self):
+        if self.db_pool:
+            while not self.db_pool.empty():
+                conn = await self.db_pool.get()
+                await conn.close()
+            self.db_pool = None
+
     async def init_pools(self, pool_size: int = 5):
         if self.db_pool is None:
             self.db_pool = asyncio.Queue(maxsize=pool_size)
@@ -593,7 +600,6 @@ class Welcome(commands.Cog):
             if member.guild.id in self.member_count_cache:
                 self.member_count_cache[member.guild.id] += 1
             else:
-                # This will calculate it for the first time
                 await self.get_member_count(member.guild)
 
             current_pos = self.member_count_cache[member.guild.id]
@@ -613,7 +619,6 @@ class Welcome(commands.Cog):
             if data.get("show_image", 1):
                 msg_file = await self.generate_welcome_card(member, data)
 
-            # 4. Send everything in one single message
             if msg_content or msg_file:
                 await channel.send(content=msg_content, file=msg_file)
 

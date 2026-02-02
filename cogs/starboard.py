@@ -191,20 +191,31 @@ class StarboardCog(commands.Cog):
             self._cache_cleanup.start()
 
     async def cog_unload(self):
-        """Cleanup resources on unload."""
+        """Cleanup resources on unload without hanging the process."""
         if self._cache_cleanup.is_running():
-            self._cache_cleanup.cancel()
+            self._cache_cleanup.stop()
+            try:
+                await self._cache_cleanup.get_task()
+            except (asyncio.CancelledError, AttributeError):
+                pass
+
+        for task in self._starboard_tasks.values():
+            if not task.done():
+                task.cancel()
 
         if self.db_pool is not None:
+            tasks = []
             while not self.db_pool.empty():
-                conn = await self.db_pool.get()
                 try:
-                    await conn.close()
-                except:
-                    pass
+                    conn = self.db_pool.get_nowait()
+                    tasks.append(conn.close())
+                except asyncio.QueueEmpty:
+                    break
+
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
 
     async def init_pools(self, pool_size: int = 5):
-        """Initialize the unified database connection pool."""
         if self.db_pool is None:
             self.db_pool = asyncio.Queue(maxsize=pool_size)
             for _ in range(pool_size):

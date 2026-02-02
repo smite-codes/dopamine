@@ -91,11 +91,21 @@ class AutoReact(commands.Cog):
     async def cog_unload(self):
         if self._reaction_task is not None:
             self._reaction_task.cancel()
+            try:
+                await self._reaction_task
+            except asyncio.CancelledError:
+                pass
 
         if self.db_pool:
-            while not self.db_pool.empty():
-                conn = await self.db_pool.get()
-                await conn.close()
+            num_conns = self.db_pool.qsize()
+            for _ in range(num_conns):
+                try:
+                    conn = self.db_pool.get_nowait()
+                    await conn.close()
+                except asyncio.QueueEmpty:
+                    break
+                except Exception as e:
+                    print(f"Error closing sqlite connection: {e}")
 
     async def init_pools(self, pool_size: int = 5):
         if self.db_pool is None:
@@ -156,7 +166,6 @@ class AutoReact(commands.Cog):
                 for row in rows:
                     data = dict(zip(cols, row))
                     key = (data['guild_id'], data['panel_id'])
-                    # Convert stored pipe string back to list for cache efficiency
                     data['emoji_list'] = self.deserialize_emojis(data['emoji'])
                     self.panel_cache[key] = data
 
