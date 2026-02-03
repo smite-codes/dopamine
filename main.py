@@ -24,7 +24,7 @@ handler = RotatingFileHandler(
     filename=log_path,
     encoding="utf-8",
     mode="a",
-    maxBytes=5 * 1024 * 1024,
+    maxBytes=1 * 1024 * 1024,
     backupCount=5
 )
 logger.addHandler(handler)
@@ -124,16 +124,19 @@ class OwnerDashboard(PrivateLayoutView):
 
         sync_btn = discord.ui.Button(label="Sync Slash", style=discord.ButtonStyle.primary)
         shutdown_btn = discord.ui.Button(label="Shutdown", style=discord.ButtonStyle.danger)
-        restart_btn = discord.ui.Button(label="Restart", style=discord.ButtonStyle.secondary)
+        restart_btn = discord.ui.Button(label="Restart", style=discord.ButtonStyle.danger)
+        log_btn = discord.ui.Button(label="Show Log", style=discord.ButtonStyle.secondary)
 
         sync_btn.callback = self.sync_callback
         shutdown_btn.callback = self.shutdown_callback
         restart_btn.callback = self.restart_callback
+        log_btn.callback = self.show_log_callback
 
         action_row = discord.ui.ActionRow()
         action_row.add_item(sync_btn)
         action_row.add_item(shutdown_btn)
         action_row.add_item(restart_btn)
+        action_row.add_item(log_btn)
 
         container.add_item(action_row)
         self.add_item(container)
@@ -189,6 +192,27 @@ class OwnerDashboard(PrivateLayoutView):
         await interaction.response.send_message("Restarting process...", ephemeral=True)
         await restart_bot()
 
+    async def show_log_callback(self, interaction: discord.Interaction):
+        log_path = os.path.join(os.path.dirname(__file__), "discord.log")
+
+        if not os.path.exists(log_path):
+            return await interaction.response.send_message("Log file not found.", ephemeral=True)
+
+        try:
+            with open(log_path, "r", encoding="utf-8") as f:
+                log_content = f.read()
+
+            if len(log_content) > 1900:
+                file = discord.File(log_path, filename="discord.log")
+                await interaction.response.send_message("Log is too long for a message. Here is the file:", file=file,
+                                                        ephemeral=True)
+            elif not log_content.strip():
+                await interaction.response.send_message("Log file is empty.", ephemeral=True)
+            else:
+                await interaction.response.send_message(f"```\n{log_content}\n```", ephemeral=True)
+
+        except Exception as e:
+            await interaction.response.send_message(f"Failed to read log: {e}", ephemeral=True)
 
 class OwnerGoToPageModal(discord.ui.Modal):
     def __init__(self, parent_view: OwnerDashboard, total_pages: int):
