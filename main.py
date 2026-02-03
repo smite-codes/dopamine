@@ -29,7 +29,11 @@ handler = RotatingFileHandler(
 )
 logger.addHandler(handler)
 
-formatter = logging.Formatter('%(asctime)s:%(levelname)s:%(name)s: %(message)s')
+log_format = '%(asctime)s||%(levelname)s: %(message)s'
+date_format = '%H:%M:%S %d-%m'
+
+formatter = logging.Formatter(log_format, datefmt=date_format)
+
 handler.setFormatter(formatter)
 
 intents = discord.Intents.default()
@@ -204,7 +208,7 @@ class OwnerDashboard(PrivateLayoutView):
 
             if len(log_content) > 1900:
                 file = discord.File(log_path, filename="discord.log")
-                await interaction.response.send_message("Log is too long for a message. Here is the file:", file=file,
+                await interaction.response.send_message("Log exceeds 1900 characters, sending as an attachment:", file=file,
                                                         ephemeral=True)
             elif not log_content.strip():
                 await interaction.response.send_message("Log file is empty.", ephemeral=True)
@@ -310,6 +314,15 @@ async def on_ready():
     print(f"Bot ready: {bot.user} (ID: {bot.user.id})")
     print(f"Bot Owner identified: {owner_user_name}")
     print(f"---------------------------------------------------")
+
+    logger.info("")
+    logger.info("")
+    logger.info(f"---------------------------------------------------")
+    logger.info(f"Bot ready: {bot.user} (ID: {bot.user.id})")
+    logger.info(f"Bot Owner identified: {owner_user_name}")
+    logger.info(f"---------------------------------------------------")
+    logger.info("")
+    logger.info("")
 
     await bot.change_presence(
         status=discord.Status.dnd,
