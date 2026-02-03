@@ -103,21 +103,34 @@ class TopGGVoter(commands.Cog):
 
     async def _update_vote_record(self, user_id: int, has_voted: bool):
         now = datetime.now()
-        voted_at = now if has_voted else None
 
         async with self.acquire_db() as db:
-            await db.execute(
-                """
-                INSERT OR REPLACE INTO voters (user_id, voted_at, last_checked)
-                VALUES (?, ?, ?)
-                """,
-                (user_id, voted_at.isoformat() if voted_at else None, now.isoformat()),
-            )
-
-        self.voter_cache[user_id] = {
-            "voted_at": voted_at,
-            "last_checked": now
-        }
+            if has_voted:
+                await db.execute(
+                    """
+                    INSERT INTO voters (user_id, voted_at, last_checked)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(user_id) DO UPDATE SET
+                        voted_at = excluded.voted_at,
+                        last_checked = excluded.last_checked
+                    """,
+                    (user_id, now.isoformat(), now.isoformat()),
+                )
+                self.voter_cache[user_id] = {"voted_at": now, "last_checked": now}
+            else:
+                await db.execute(
+                    """
+                    INSERT INTO voters (user_id, last_checked)
+                    VALUES (?, ?)
+                    ON CONFLICT(user_id) DO UPDATE SET
+                        last_checked = excluded.last_checked
+                    """,
+                    (user_id, now.isoformat()),
+                )
+                if user_id in self.voter_cache:
+                    self.voter_cache[user_id]["last_checked"] = now
+                else:
+                    self.voter_cache[user_id] = {"voted_at": None, "last_checked": now}
 
     async def has_user_voted(self, user_id: int) -> bool:
         if OVERRIDE_VOTEWALL:
@@ -146,9 +159,13 @@ class TopGGVoter(commands.Cog):
 
     async def is_voter(self, user_id: int) -> bool:
         data = self.voter_cache.get(user_id)
-        if data and data["voted_at"] is not None:
-            return True
-        return False
+        if not data or data["voted_at"] is None:
+            return False
+
+        voter_window = timedelta(hours=12)
+        is_fresh = datetime.now() - data["voted_at"] < voter_window
+
+        return is_fresh
 
     async def should_check_topgg(self, user_id: int) -> bool:
         data = self.voter_cache.get(user_id)
