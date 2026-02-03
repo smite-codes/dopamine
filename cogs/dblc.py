@@ -306,6 +306,9 @@ class Dblc(commands.Cog):
             uptime_seconds = 0
         uptime_formatted = format_uptime(uptime_seconds)
 
+        proc_seconds = int(time.time() - getattr(self.bot, 'process_start_time', time.time()))
+        proc_uptime = format_uptime(proc_seconds)
+
         try:
             process = psutil.Process(os.getpid())
             memory_bytes = process.memory_info().rss
@@ -339,7 +342,8 @@ class Dblc(commands.Cog):
                 f"> Round-trip Latency: `{round_latency}ms`\n"
                 f"> Heartbeat/WebSocket Latency: `{discord_latency}ms`\n\n"
                 f"> Average API Latency: `{avg_latency}ms` (over `{sample_count}` samples where each sample is average of 12 samples)\n\n"
-                f"> Uptime: `{uptime_formatted}`\n"
+                f"> Connection Uptime: `{uptime_formatted}`\n"
+                f"> Process Uptime: `{proc_uptime}`\n"
                 f"> Memory Usage: `{memory_usage}`\n"
                 f"> {battery_status}"
             ),
