@@ -583,18 +583,18 @@ class DestructiveConfirmationView(PrivateLayoutView):
         container.add_item(discord.ui.Separator())
         container.add_item(discord.ui.TextDisplay(self.body_text))
 
-        if self.value is None:
-            action_row = discord.ui.ActionRow()
-            cancel = discord.ui.Button(label="Cancel", style=discord.ButtonStyle.gray)
-            confirm = discord.ui.Button(label="Delete Permanently", style=discord.ButtonStyle.red)
+        is_disabled = self.value is not None
+        action_row = discord.ui.ActionRow()
+        cancel = discord.ui.Button(label="Cancel", style=discord.ButtonStyle.gray, disabled=is_disabled)
+        confirm = discord.ui.Button(label="Delete Permanently", style=discord.ButtonStyle.red, disabled=is_disabled)
 
-            cancel.callback = self.cancel_callback
-            confirm.callback = self.confirm_callback
+        cancel.callback = self.cancel_callback
+        confirm.callback = self.confirm_callback
 
-            action_row.add_item(cancel)
-            action_row.add_item(confirm)
-            container.add_item(discord.ui.Separator())
-            container.add_item(action_row)
+        action_row.add_item(cancel)
+        action_row.add_item(confirm)
+        container.add_item(discord.ui.Separator())
+        container.add_item(action_row)
 
         self.add_item(container)
 
@@ -620,6 +620,7 @@ class DestructiveConfirmationView(PrivateLayoutView):
 
     async def on_timeout(self, interaction: discord.Interaction):
         if self.value is None and self.message:
+            self.value = False
             await self.update_view(interaction, "Timed Out", discord.Color(0xdf5046))
 
 class ConfirmationView(PrivateLayoutView):
@@ -628,7 +629,7 @@ class ConfirmationView(PrivateLayoutView):
         self.value = None
         self.title_text = title_text
         self.body_text = body_text
-        self.color = color
+        self.color = None
         self.message: discord.Message = None
         self.build_layout()
 
@@ -639,18 +640,18 @@ class ConfirmationView(PrivateLayoutView):
         container.add_item(discord.ui.Separator())
         container.add_item(discord.ui.TextDisplay(self.body_text))
 
-        if self.value is None:
-            action_row = discord.ui.ActionRow()
-            cancel = discord.ui.Button(label="Cancel", style=discord.ButtonStyle.red)
-            confirm = discord.ui.Button(label="Confirm", style=discord.ButtonStyle.green)
+        is_disabled = self.value is not None
+        action_row = discord.ui.ActionRow()
+        cancel = discord.ui.Button(label="Cancel", style=discord.ButtonStyle.red)
+        confirm = discord.ui.Button(label="Confirm", style=discord.ButtonStyle.green)
 
-            cancel.callback = self.cancel_callback
-            confirm.callback = self.confirm_callback
+        cancel.callback = self.cancel_callback
+        confirm.callback = self.confirm_callback
 
-            action_row.add_item(cancel)
-            action_row.add_item(confirm)
-            container.add_item(discord.ui.Separator())
-            container.add_item(action_row)
+        action_row.add_item(cancel)
+        action_row.add_item(confirm)
+        container.add_item(discord.ui.Separator())
+        container.add_item(action_row)
 
         self.add_item(container)
 
@@ -676,8 +677,8 @@ class ConfirmationView(PrivateLayoutView):
 
     async def on_timeout(self, interaction: discord.Interaction):
         if self.value is None and self.message:
+            self.value = False
             await self.update_view(interaction, "Timed Out", discord.Color(0xdf5046))
-            self.stop()
 
 class Giveaways(commands.Cog):
     def __init__(self, bot):

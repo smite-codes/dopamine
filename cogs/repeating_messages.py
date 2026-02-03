@@ -559,6 +559,7 @@ class DestructiveConfirmationView(PrivateLayoutView):
         super().__init__(user, timeout=30)
         self.name = name
         self.cog = cog
+        self.color = None
         self.guild_id = guild_id
         self.message_id = message_id
         self.value = None
@@ -568,24 +569,24 @@ class DestructiveConfirmationView(PrivateLayoutView):
 
     def build_layout(self):
         self.clear_items()
-        container = discord.ui.Container()
+        container = discord.ui.Container(accent_color=self.color)
         container.add_item(discord.ui.TextDisplay(f"### {self.title_text}"))
         container.add_item(discord.ui.Separator())
         container.add_item(discord.ui.TextDisplay(self.body_text))
 
-        if self.value is None:
-            action_row = discord.ui.ActionRow()
-            cancel = discord.ui.Button(label="Cancel", style=discord.ButtonStyle.gray)
-            confirm = discord.ui.Button(label="Delete Forever",
-                                        style=discord.ButtonStyle.danger)
+        is_disabled = self.value is not None
+        action_row = discord.ui.ActionRow()
+        cancel = discord.ui.Button(label="Cancel", style=discord.ButtonStyle.gray, disabled=is_disabled)
+        confirm = discord.ui.Button(label="Delete Permanently",
+                                    style=discord.ButtonStyle.danger, disabled=is_disabled)
 
-            cancel.callback = self.cancel_callback
-            confirm.callback = self.confirm_callback
+        cancel.callback = self.cancel_callback
+        confirm.callback = self.confirm_callback
 
-            action_row.add_item(cancel)
-            action_row.add_item(confirm)
-            container.add_item(discord.ui.Separator())
-            container.add_item(action_row)
+        action_row.add_item(cancel)
+        action_row.add_item(confirm)
+        container.add_item(discord.ui.Separator())
+        container.add_item(action_row)
 
         self.add_item(container)
 
@@ -625,7 +626,8 @@ class DestructiveConfirmationView(PrivateLayoutView):
 
     async def on_timeout(self, interaction: discord.Interaction):
         if self.value is None:
-            pass
+            self.value = False
+            await self.update_view(interaction, "Timed Out", discord.Color(0xdf5046))
 
 
 class RepeatingMessages(commands.Cog):
