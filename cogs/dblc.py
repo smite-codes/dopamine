@@ -1,6 +1,6 @@
 import discord
 from discord import app_commands
-from discord.ext import commands
+from discord.ext import commands, tasks
 from utils.checks import slash_mod_check, mod_check
 from utils.log import LoggingManager
 from VERSION import bot_version
@@ -8,10 +8,38 @@ import time
 import psutil
 import asyncio
 import os
+from collections import deque
 
 class Dblc(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.latency_cache = deque(maxlen=86400)
+        self.cache_task.start()
+
+    def cog_unload(self):
+        self.cache_task.cancel()
+
+    @tasks.loop(seconds=1.0)
+    async def cache_task(self):
+        if not self.bot.is_ready():
+            return
+
+        try:
+            ws_latency = self.bot.latency * 1000
+
+            start = time.perf_counter()
+            await self.bot.fetch_user(self.bot.user.id)
+            api_latency = (time.perf_counter() - start) * 1000
+
+            total_latency = ws_latency + api_latency
+            self.latency_cache.append(total_latency)
+        except Exception:
+            pass
+
+    @cache_task.before_loop
+    async def before_cache_task(self):
+        await self.bot.wait_until_ready()
+        await asyncio.sleep(10)
 
     @app_commands.command(name="avatar", description="Get a user's avatar.")
     @app_commands.describe(user="The user whose avatar you want to see.")
@@ -134,7 +162,6 @@ class Dblc(commands.Cog):
 
     async def info(self, interaction: discord.Interaction):
         def format_uptime(seconds):
-            """Format uptime into weeks, days, hours, minutes, seconds"""
             weeks = seconds // (7 * 24 * 60 * 60)
             seconds %= (7 * 24 * 60 * 60)
             days = seconds // (24 * 60 * 60)
@@ -164,17 +191,26 @@ class Dblc(commands.Cog):
             "Getting your location...\n"
             "Calculating distance to your home...\n"
             "Sending you some icecream...\n"
-            "Calculating the dev's love for his sexy girlfriend...\n"
-            "Done! Icecream sent, love exceeds 64-bit integer limit."
+            "Done! Icecream sent."
         )
 
-        discord_latency = round(self.bot.latency * 1000, 2)
-        start = time.perf_counter()
-        await interaction.response.send_message(initial_message)
-        end = time.perf_counter()
-        connection_latency = round((end - start) * 1000, 2)
+        if self.latency_cache:
+            avg_latency = round(sum(self.latency_cache) / len(self.latency_cache), 2)
+            sample_count = len(self.latency_cache)
+        else:
+            avg_latency = "Calculating..."
+            sample_count = 0
 
-        total_latency = round(discord_latency + connection_latency, 2)
+        await interaction.response.send_message(initial_message)
+        discord_latency = round(self.bot.latency * 1000, 2)
+        try:
+            start = time.perf_counter()
+            await self.bot.http.request(discord.http.Route("GET", "/gateway"))
+            end = time.perf_counter()
+            connection_latency = round((end - start) * 1000, 2)
+        except Exception:
+            connection_latency = "Error"
+        total_latency = round(discord_latency + connection_latency)
 
         if hasattr(self.bot, 'start_time'):
             uptime_seconds = int(time.time() - self.bot.start_time)
@@ -203,7 +239,7 @@ class Dblc(commands.Cog):
                 charging = battery.power_plugged
                 battery_status = f"Host Device Battery Status: `{percent}% ({'Charging' if charging else 'Discharging'})`"
             else:
-                battery_status = "Host Device Battery Status: `Not available`"
+                battery_status = "Host Device Battery Status: `Device has no battery`"
         except Exception:
             battery_status = "Host Device Battery Status: `Unable to determine`"
 
@@ -214,70 +250,16 @@ class Dblc(commands.Cog):
                 f"> Discord Latency: `{discord_latency}ms`\n"
                 f"> Connection Latency: `{connection_latency}ms`\n"
                 f"> Total Latency: `{total_latency}ms`\n\n"
-                f"> Average Latency: `Measuring...`\n\n"
+                f"> Average Latency: `{avg_latency}ms` (over `{sample_count}` samples)\n\n"
                 f"> Uptime: `{uptime_formatted}`\n"
                 f"> Memory Usage: `{memory_usage}`\n"
                 f"> {battery_status}"
             ),
-            color=discord.Color(0x337fd5)
+            color=discord.Color(0x8632e6)
         )
 
         message = await interaction.original_response()
         await message.edit(content=None, embed=embed)
-
-        asyncio.create_task(
-            self.measure_average_latency(message, embed, discord_latency, connection_latency, total_latency,
-                                         uptime_formatted, memory_usage, battery_status))
-
-    async def measure_average_latency(self, message, embed, discord_latency, connection_latency, total_latency,
-                                      uptime_formatted, memory_usage, battery_status):
-        """Measure average TOTAL latency over 30 seconds by sampling and measuring API calls"""
-        total_latencies = []
-        start_time = time.time()
-
-        while time.time() - start_time < 30:
-            try:
-                ws_latency = self.bot.latency * 1000
-
-                api_before = time.perf_counter()
-                try:
-                    channel = await self.bot.fetch_channel(message.channel.id)
-                except Exception:
-                    channel = None
-                api_after = time.perf_counter()
-                api_latency = (api_after - api_before) * 1000
-
-                current_total_latency = ws_latency + api_latency
-                total_latencies.append(current_total_latency)
-
-            except Exception as e:
-                ws_latency = self.bot.latency * 1000
-                estimated_connection = ws_latency * 0.1
-                current_total_latency = ws_latency + estimated_connection
-                total_latencies.append(current_total_latency)
-
-            await asyncio.sleep(2)
-
-        if total_latencies:
-            average_total_latency = round(sum(total_latencies) / len(total_latencies), 2)
-        else:
-            average_total_latency = total_latency
-
-        embed.description = (
-            f"> Bot Version: `{bot_version}`\n\n"
-            f"> Discord Latency: `{discord_latency}ms`\n"
-            f"> Connection Latency: `{connection_latency}ms`\n"
-            f"> Total Latency: `{total_latency}ms`\n\n"
-            f"> Average Latency: `{average_total_latency}ms`\n\n"
-            f"> Uptime: `{uptime_formatted}`\n"
-            f"> Memory Usage: `{memory_usage}`\n"
-            f"> {battery_status}"
-        )
-
-        try:
-            await message.edit(embed=embed)
-        except Exception:
-            pass
 
 async def setup(bot):
     await bot.add_cog(Dblc(bot))
