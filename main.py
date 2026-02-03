@@ -332,7 +332,7 @@ async def on_ready():
 
 @bot.tree.command(name="zc", description=".")
 async def zc(interaction: discord.Interaction):
-    if interaction.user.id != bot.owner_id:
+    if not await bot.is_owner(interaction.user):
         await interaction.response.send_message(
             "🤫",
             ephemeral=True
@@ -346,7 +346,7 @@ async def zc(interaction: discord.Interaction):
 @bot.tree.command(name="fuckoff",
                   description="Is the bot annoying you? Tell it to fuck off and shut itself down using this.")
 async def fuckoff(interaction: discord.Interaction):
-    if interaction.user.id != bot.owner_id:
+    if not await bot.is_owner(interaction.user):
         await interaction.response.send_message(
             "What do you think you're doing? Who do you think you are?? Why do you want to kill me???\nYou're not my dev. Don't tell me what to do. Go away.",
             ephemeral=True
