@@ -318,8 +318,10 @@ class Dblc(commands.Cog):
                 memory_gb = int(memory_mb // 1024)
                 memory_remaining_mb = round(memory_mb % 1024, 2)
                 memory_usage = f"{memory_gb}GB {memory_remaining_mb}MB"
+                cpu_usage = process.cpu_percent(interval=None)
             else:
                 memory_usage = f"{round(memory_mb, 2)}MB"
+                cpu_usage = "N/A"
         except Exception:
             memory_usage = "Unable to calculate"
 
@@ -343,7 +345,8 @@ class Dblc(commands.Cog):
                 f"> Heartbeat/WebSocket Latency: `{discord_latency}ms`\n\n"
                 f"> Average API Latency: `{avg_latency}ms` (over `{sample_count}` samples where each sample is average of 12 samples)\n\n"
                 f"> Connection Uptime: `{uptime_formatted}`\n"
-                f"> Process Uptime: `{proc_uptime}`\n"
+                f"> Process Uptime: `{proc_uptime}`\n\n"
+                f"> CPU Usage: `{cpu_usage}`\n"
                 f"> Memory Usage: `{memory_usage}`\n"
                 f"> {battery_status}"
             ),
