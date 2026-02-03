@@ -971,7 +971,7 @@ class Points(commands.Cog):
                 rows = await cursor.fetchall()
 
             for guild_id, user_id in rows:
-                guild = self.bot.get_guild(guild_id)
+                guild = self.bot.get_guild(guild_id) or await self.bot.fetch_guild(guild_id)
                 if guild:
                     try:
                         await guild.unban(discord.Object(id=user_id), reason="Temporary ban expired")

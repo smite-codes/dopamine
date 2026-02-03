@@ -435,7 +435,7 @@ class StarboardCog(commands.Cog):
             creator_id = self.lfg_creators.pop(message.id, None)
             self.lfg_message_times.pop(message.id, None)
 
-            creator = message.guild.get_member(creator_id)
+            creator = message.guild.get_member(creator_id) or await message.guild.fetch_member(creator_id)
             embed = discord.Embed(
                 title="LFG Group Ready!",
                 description=f"**Created by:** {creator.mention if creator else 'Unknown User'}",

@@ -120,7 +120,7 @@ class MaxWithStrapOn(commands.Cog):
             font_nick, font_username = self._get_fonts()
 
             if interaction.guild:
-                member = interaction.guild.get_member(user.id)
+                member = interaction.guild.get_member(user.id) or await interaction.guild.fetch_member(user.id)
                 if member:
                     nickname = member.display_name
                 else:

@@ -243,7 +243,7 @@ class ParticipantPaginator(discord.ui.View):
         data = []
         for uid in participants:
             entries = 1
-            member = self.guild.get_member(uid)
+            member = self.guild.get_member(uid) or self.guild.fetch_member(uid)
             if member and extra_roles:
                 for role_id in extra_roles:
                     if any(r.id == role_id for r in member.roles):
@@ -838,7 +838,7 @@ class Giveaways(commands.Cog):
         extra_roles_str = g.get('extra_entry_roles', '')
         extra_roles_list = [int(r) for r in extra_roles_str.split(',')] if extra_roles_str else []
 
-        guild = self.bot.get_guild(guild_id)
+        guild = self.bot.get_guild(guild_id) or await self.bot.fetch_guild(guild_id)
 
         for user_id in raw_participants:
             pool.append(user_id)
@@ -883,7 +883,7 @@ class Giveaways(commands.Cog):
         whichone = "participant_cache"
         await self.mark_as_ended(giveaway_id, guild_id, whichone)
 
-        guild = self.bot.get_guild(guild_id)
+        guild = self.bot.get_guild(guild_id) or await self.bot.fetch_guild(guild_id)
         channel = guild.get_channel(g['channel_id']) if guild else None
         if channel:
             try:
@@ -904,7 +904,7 @@ class Giveaways(commands.Cog):
                     if role:
                         for chunk in chunk_list(winners, 5):
                             for member_id in chunk:
-                                member = guild.get_member(member_id)
+                                member = guild.get_member(member_id) or await guild.fetch_member(member_id)
                                 if member:
                                     try:
                                         await member.add_roles(role, reason="Giveaway Winner")
@@ -1204,7 +1204,7 @@ class Giveaways(commands.Cog):
                         if role:
                             for chunk in chunk_list(self, prev_winners, 5):
                                 for old_uid in chunk:
-                                    member = interaction.guild.get_member(old_uid)
+                                    member = interaction.guild.get_member(old_uid) or await interaction.guild.fetch_member(old_uid)
                                     if member and role in member.roles:
                                         try:
                                             await member.remove_roles(role, reason="Giveaway Reroll")
@@ -1224,7 +1224,7 @@ class Giveaways(commands.Cog):
                         if role:
                             for chunk in chunk_list(new_picks, 5):
                                 for new_uid in chunk:
-                                    member = interaction.guild.get_member(new_uid)
+                                    member = interaction.guild.get_member(new_uid) or await interaction.guild.fetch_member(new_uid)
                                     if member:
                                         try:
                                             await member.add_roles(role, reason="Giveaway Winner")

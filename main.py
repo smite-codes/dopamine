@@ -42,7 +42,7 @@ intents.members = True
 intents.reactions = True
 
 bot = commands.Bot(command_prefix="!!", intents=intents, help_command=None,
-                   member_cache_flags=discord.MemberCacheFlags(voice=True, joined=False), chunk_guilds_at_startup=False)
+                   member_cache_flags=discord.MemberCacheFlags(voice=True, joined=False), chunk_guilds_at_startup=False, guild_ready_timeout=0)
 bot.synced = False
 
 

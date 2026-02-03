@@ -519,6 +519,8 @@ class MemberCountTracker(commands.Cog):
         for data in active_trackers:
             guild_id = data['guild_id']
             guild = self.bot.get_guild(guild_id)
+            if not guild:
+                guild = await self.bot.fetch_guild(guild_id)
             if not guild: continue
 
             exclude_bots = data.get('exclude_bots', 0)

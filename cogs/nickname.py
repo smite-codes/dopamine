@@ -260,7 +260,7 @@ class Nickname(commands.Cog):
         verified = self.verifiedcache.get(guild.id, set())
         if member_id in verified:
             return False
-        member = guild.get_member(member_id)
+        member = guild.get_member(member_id) or guild.fetch_member(member_id)
         if not member:
             return False
         if member.top_role >= guild.me.top_role or member == guild.owner:
