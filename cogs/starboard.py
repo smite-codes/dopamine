@@ -163,7 +163,6 @@ class ChannelSelectView(PrivateLayoutView):
 
 
 class StarboardCog(commands.Cog):
-    """Starboard and LFG functionality with manual write-through caching."""
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -183,7 +182,6 @@ class StarboardCog(commands.Cog):
         self._starboard_tasks: Dict[int, asyncio.Task] = {}
 
     async def cog_load(self):
-        """Initialize pools, DB, and populate caches."""
         await self.init_pools()
         await self.init_db()
         await self.populate_caches()
@@ -191,29 +189,22 @@ class StarboardCog(commands.Cog):
             self._cache_cleanup.start()
 
     async def cog_unload(self):
-        """Cleanup resources on unload without hanging the process."""
-        if self._cache_cleanup.is_running():
-            self._cache_cleanup.stop()
-            try:
-                await self._cache_cleanup.get_task()
-            except (asyncio.CancelledError, AttributeError):
-                pass
+        self._cache_cleanup.cancel()
 
         for task in self._starboard_tasks.values():
             if not task.done():
                 task.cancel()
 
+        if self._starboard_tasks:
+            await asyncio.gather(*self._starboard_tasks.values(), return_exceptions=True)
+
         if self.db_pool is not None:
-            tasks = []
             while not self.db_pool.empty():
                 try:
                     conn = self.db_pool.get_nowait()
-                    tasks.append(conn.close())
-                except asyncio.QueueEmpty:
+                    await asyncio.wait_for(conn.close(), timeout=1.0)
+                except (asyncio.QueueEmpty, asyncio.TimeoutError):
                     break
-
-            if tasks:
-                await asyncio.gather(*tasks, return_exceptions=True)
 
     async def init_pools(self, pool_size: int = 5):
         if self.db_pool is None:
@@ -232,7 +223,6 @@ class StarboardCog(commands.Cog):
 
     @asynccontextmanager
     async def acquire_db(self):
-        """Context manager to acquire and return a connection to the pool."""
         if self.db_pool is None:
             await self.init_pools()
         conn = await self.db_pool.get()
@@ -242,7 +232,6 @@ class StarboardCog(commands.Cog):
             await self.db_pool.put(conn)
 
     async def init_db(self):
-        """Setup table structure."""
         async with self.acquire_db() as db:
             await db.execute("""
                              CREATE TABLE IF NOT EXISTS guild_settings

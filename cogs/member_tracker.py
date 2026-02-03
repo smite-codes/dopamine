@@ -429,20 +429,18 @@ class MemberCountTracker(commands.Cog):
             self.member_count_monitor.start()
 
     async def cog_unload(self):
-        if self.member_count_monitor.is_running():
-            self.member_count_monitor.cancel()
-            try:
-                await self.member_count_monitor
-            except asyncio.CancelledError:
-                pass
+        self.member_count_monitor.cancel()
+
         if self.db_pool:
             while not self.db_pool.empty():
                 try:
                     conn = self.db_pool.get_nowait()
                     await conn.close()
-                except asyncio.QueueEmpty:
+                except (asyncio.QueueEmpty, Exception):
                     break
             self.db_pool = None
+        if hasattr(self, 'db') and self.db:
+            await self.db.close()
 
     async def init_pools(self, pool_size: int = 5):
         if self.db_pool is None:

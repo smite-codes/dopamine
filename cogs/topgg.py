@@ -91,13 +91,8 @@ class TopGGVoter(commands.Cog):
 
         if self.db_pool:
             while not self.db_pool.empty():
-                try:
-                    conn = self.db_pool.get_nowait()
-                    await conn.close()
-                except asyncio.QueueEmpty:
-                    break
-                except Exception as e:
-                    print(f"Error closing connection during unload: {e}")
+                conn = await self.db_pool.get()
+                await conn.close()
 
             self.db_pool = None
 
