@@ -328,6 +328,7 @@ async def on_ready():
         status=discord.Status.dnd,
         activity=discord.CustomActivity(name="✨ Testing v3.0.0-alpha!")
     )
+    bot.start_time = time.time()
 
 
 @bot.tree.command(name="zc", description=".")
