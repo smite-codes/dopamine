@@ -8,31 +8,40 @@ import time
 import psutil
 import asyncio
 import os
+import io
+from PIL import Image, ImageDraw
 from collections import deque
 
 class Dblc(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.latency_cache = deque(maxlen=86400)
+        self.latency_cache = deque(maxlen=1440)
+        self.temp_samples = []
         self.cache_task.start()
 
     def cog_unload(self):
         self.cache_task.cancel()
 
-    @tasks.loop(seconds=1.0)
+    @tasks.loop(seconds=5.0)
     async def cache_task(self):
         if not self.bot.is_ready():
             return
 
         try:
             ws_latency = self.bot.latency * 1000
-
             start = time.perf_counter()
             await self.bot.fetch_user(self.bot.user.id)
             api_latency = (time.perf_counter() - start) * 1000
 
             total_latency = ws_latency + api_latency
-            self.latency_cache.append(total_latency)
+
+            self.temp_samples.append(total_latency)
+
+            if len(self.temp_samples) >= 12:
+                avg_latency = sum(self.temp_samples) / len(self.temp_samples)
+                self.latency_cache.append(avg_latency)
+                self.temp_samples.clear()
+
         except Exception:
             pass
 
@@ -40,6 +49,75 @@ class Dblc(commands.Cog):
     async def before_cache_task(self):
         await self.bot.wait_until_ready()
         await asyncio.sleep(10)
+
+    def generate_latency_graph(self):
+        scale_factor = 2
+        width, height = 600 * scale_factor, 300 * scale_factor
+        pad_top, pad_bot, pad_left, pad_right = 40, 80, 100, 40
+
+        img = Image.new("RGBA", (width, height), color=(30, 31, 34, 255))
+        draw = ImageDraw.Draw(img)
+
+        data = list(self.latency_cache)
+        if len(data) < 2:
+            return None
+
+        max_lat = max(data) if max(data) > 0 else 1
+        y_limit = max_lat * 1.3
+
+        grid_color = (60, 62, 68, 255)
+        num_y_labels = 4
+        for i in range(num_y_labels + 1):
+            val = (y_limit / num_y_labels) * i
+            y = (height - pad_bot) - (i / num_y_labels) * (height - pad_top - pad_bot)
+            draw.line([(pad_left, y), (width - pad_right, y)], fill=grid_color, width=1 * scale_factor)
+            draw.text((pad_left - 15, y), f"{int(val)}ms", fill=(180, 180, 180), anchor="rm",
+                      font_size=12 * scale_factor)
+
+        graph_width = width - pad_left - pad_right
+        graph_height = height - pad_top - pad_bot
+        total_samples = len(data)
+
+        intervals = [0, 360, 720, 1080, 1440]
+
+        for m in intervals:
+
+            if m >= total_samples:
+                continue
+
+            x = (width - pad_right) - (m / (total_samples - 1 if total_samples > 1 else 1)) * graph_width
+
+            if x < pad_left:
+                continue
+
+            label = "Now" if m == 0 else (f"{m // 60}h" if m >= 60 else f"{m}m")
+
+            draw.line([(x, height - pad_bot), (x, height - pad_bot + 10)], fill=(150, 150, 150), width=2)
+
+            draw.text((x, height - pad_bot + 25), label, fill=(150, 150, 150), anchor="mt",
+                      font_size=12 * scale_factor)
+
+        points = []
+        for i, val in enumerate(data):
+            x = pad_left + (i / (len(data) - 1)) * graph_width
+            y = (height - pad_bot) - (val / y_limit) * graph_height
+            points.append((x, y))
+
+        fill_points = [(pad_left, height - pad_bot)] + points + [(width - pad_right, height - pad_bot)]
+        overlay = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        overlay_draw = ImageDraw.Draw(overlay)
+        overlay_draw.polygon(fill_points, fill=(134, 50, 230, 40))
+        img = Image.alpha_composite(img, overlay)
+
+        draw = ImageDraw.Draw(img)
+        draw.line(points, fill=(160, 80, 255), width=3 * scale_factor, joint="round")
+
+        img = img.resize((600, 300), resample=Image.LANCZOS)
+
+        buffer = io.BytesIO()
+        img.save(buffer, format="PNG")
+        buffer.seek(0)
+        return buffer
 
     @app_commands.command(name="avatar", description="Get a user's avatar.")
     @app_commands.describe(user="The user whose avatar you want to see.")
@@ -257,9 +335,21 @@ class Dblc(commands.Cog):
             ),
             color=discord.Color(0x8632e6)
         )
-
         message = await interaction.original_response()
         await message.edit(content=None, embed=embed)
+
+    @latency.command(name="graph", description="Shows a graph of the average latency in the last 24 hours")
+    async def graph(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        try:
+            graph_buffer = self.generate_latency_graph()
+        except Exception as e:
+            return await interaction.edit_original_response(content=f"ERROR: {e}")
+        if graph_buffer:
+            file = discord.File(graph_buffer, filename="graph.png")
+            await interaction.edit_original_response(content=None, attachments=[file])
+        else:
+            await interaction.edit_original_response(content="Not enough data yet! The bot or cog was restarted very recently. Please wait a few minutes.")
 
 async def setup(bot):
     await bot.add_cog(Dblc(bot))
