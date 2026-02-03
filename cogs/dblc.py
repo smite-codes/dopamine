@@ -9,8 +9,9 @@ import psutil
 import asyncio
 import os
 import io
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 from collections import deque
+from config import BOLDFONT_PATH
 
 class Dblc(commands.Cog):
     def __init__(self, bot):
@@ -28,12 +29,13 @@ class Dblc(commands.Cog):
             return
 
         try:
-            ws_latency = self.bot.latency * 1000
-            start = time.perf_counter()
-            await self.bot.fetch_user(self.bot.user.id)
-            api_latency = (time.perf_counter() - start) * 1000
-
-            total_latency = ws_latency + api_latency
+            try:
+                start = time.perf_counter()
+                await self.bot.http.request(discord.http.Route("GET", "/gateway"))
+                end = time.perf_counter()
+                total_latency = round((end - start) * 1000)
+            except Exception:
+                total_latency = "Error"
 
             self.temp_samples.append(total_latency)
 
@@ -53,14 +55,30 @@ class Dblc(commands.Cog):
     def generate_latency_graph(self):
         scale_factor = 2
         width, height = 600 * scale_factor, 300 * scale_factor
-        pad_top, pad_bot, pad_left, pad_right = 40, 80, 100, 40
+        pad_top, pad_bot, pad_left, pad_right = 150, 80, 100, 40
 
         img = Image.new("RGBA", (width, height), color=(30, 31, 34, 255))
         draw = ImageDraw.Draw(img)
 
+        try:
+            title_font = ImageFont.truetype(BOLDFONT_PATH, 24 * scale_factor)
+            draw.text(
+                (50, 50),
+                "Dopamine - Average API Latency",
+                fill=(255, 255, 255, 255),
+                font=title_font
+            )
+        except Exception as e:
+            print(f"Font loading error: {e}")
+            draw.text((50, 50), "Dopamine - Average API Latency", fill=(255, 255, 255, 255))
+
         data = list(self.latency_cache)
-        if len(data) < 2:
+        num_samples = len(data)
+
+        if num_samples < 2:
             return None
+
+        total_minutes_covered = num_samples
 
         max_lat = max(data) if max(data) > 0 else 1
         y_limit = max_lat * 1.3
@@ -76,30 +94,28 @@ class Dblc(commands.Cog):
 
         graph_width = width - pad_left - pad_right
         graph_height = height - pad_top - pad_bot
-        total_samples = len(data)
 
-        intervals = [0, 360, 720, 1080, 1440]
+        num_x_labels = 5
+        for i in range(num_x_labels):
+            sample_idx = int((i / (num_x_labels - 1)) * (num_samples - 1))
 
-        for m in intervals:
+            x = pad_left + (i / (num_x_labels - 1)) * graph_width
 
-            if m >= total_samples:
-                continue
+            mins_ago = num_samples - 1 - sample_idx
 
-            x = (width - pad_right) - (m / (total_samples - 1 if total_samples > 1 else 1)) * graph_width
-
-            if x < pad_left:
-                continue
-
-            label = "Now" if m == 0 else (f"{m // 60}h" if m >= 60 else f"{m}m")
+            if mins_ago == 0:
+                label = "Now"
+            elif mins_ago >= 60:
+                label = f"{round(mins_ago / 60, 1)}h"
+            else:
+                label = f"{mins_ago}m"
 
             draw.line([(x, height - pad_bot), (x, height - pad_bot + 10)], fill=(150, 150, 150), width=2)
-
-            draw.text((x, height - pad_bot + 25), label, fill=(150, 150, 150), anchor="mt",
-                      font_size=12 * scale_factor)
+            draw.text((x, height - pad_bot + 25), label, fill=(150, 150, 150), anchor="mt", font_size=12 * scale_factor)
 
         points = []
         for i, val in enumerate(data):
-            x = pad_left + (i / (len(data) - 1)) * graph_width
+            x = pad_left + (i / (num_samples - 1)) * graph_width
             y = (height - pad_bot) - (val / y_limit) * graph_height
             points.append((x, y))
 
@@ -113,7 +129,6 @@ class Dblc(commands.Cog):
         draw.line(points, fill=(160, 80, 255), width=3 * scale_factor, joint="round")
 
         img = img.resize((600, 300), resample=Image.LANCZOS)
-
         buffer = io.BytesIO()
         img.save(buffer, format="PNG")
         buffer.seek(0)
@@ -223,12 +238,6 @@ class Dblc(commands.Cog):
         except Exception as e:
             await interaction.response.send_message(f"Error: Could not send message: {e}", ephemeral=True)
 
-    @app_commands.command(name="ping", description="Show bot latency.")
-    async def ping_slash(self, interaction: discord.Interaction):
-        await interaction.response.send_message("Pong!")
-        latency_ms = round(self.bot.latency * 1000)
-        await interaction.edit_original_response(content=f"Pong! `{latency_ms}ms`")
-
     @app_commands.command(name="servercount", description="Get the number of servers the bot is in.")
     async def servercount(self, interaction: discord.Interaction):
         server_count = len(self.bot.guilds)
@@ -236,7 +245,7 @@ class Dblc(commands.Cog):
 
     latency = app_commands.Group(name="latency", description="Latency-related commands.")
 
-    @latency.command(name="info", description="Get detailed latency and bot information")
+    @app_commands.command(name="ping", description="Get detailed latency and bot information")
 
     async def info(self, interaction: discord.Interaction):
         def format_uptime(seconds):
@@ -278,17 +287,18 @@ class Dblc(commands.Cog):
         else:
             avg_latency = "Calculating..."
             sample_count = 0
-
+        start_time = time.time()
         await interaction.response.send_message(initial_message)
-        discord_latency = round(self.bot.latency * 1000, 2)
+        end_time = time.time()
+        round_latency = round((end_time - start_time) * 1000)
+        discord_latency = round(self.bot.latency * 1000)
         try:
             start = time.perf_counter()
             await self.bot.http.request(discord.http.Route("GET", "/gateway"))
             end = time.perf_counter()
-            connection_latency = round((end - start) * 1000, 2)
+            connection_latency = round((end - start) * 1000)
         except Exception:
             connection_latency = "Error"
-        total_latency = round(discord_latency + connection_latency)
 
         if hasattr(self.bot, 'start_time'):
             uptime_seconds = int(time.time() - self.bot.start_time)
@@ -325,10 +335,10 @@ class Dblc(commands.Cog):
             title="Latency Info",
             description=(
                 f"> Bot Version: `{bot_version}`\n\n"
-                f"> Discord Latency: `{discord_latency}ms`\n"
-                f"> Connection Latency: `{connection_latency}ms`\n"
-                f"> Total Latency: `{total_latency}ms`\n\n"
-                f"> Average Latency: `{avg_latency}ms` (over `{sample_count}` samples)\n\n"
+                f"> API Latency: `{connection_latency}ms`\n"
+                f"> Round-trip Latency: `{round_latency}ms`\n"
+                f"> Heartbeat/WebSocket Latency: `{discord_latency}ms`\n\n"
+                f"> Average API Latency: `{avg_latency}ms` (over `{sample_count}` samples where each sample is average of 12 samples)\n\n"
                 f"> Uptime: `{uptime_formatted}`\n"
                 f"> Memory Usage: `{memory_usage}`\n"
                 f"> {battery_status}"
