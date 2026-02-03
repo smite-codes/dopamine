@@ -327,14 +327,14 @@ class CV2Helper(PrivateLayoutView):
         container.add_item(discord.ui.TextDisplay("## Welcome Feature Dashboard"))
 
         btn_main = discord.ui.Button(
-            label=f"{'Welcome Feature Enabled' if is_enabled else 'Disabled'}",
-            style=discord.ButtonStyle.primary if is_enabled else discord.ButtonStyle.secondary
+            label=f"{'Disable Welcome Feature' if is_enabled else 'Enable'}",
+            style=discord.ButtonStyle.secondary if is_enabled else discord.ButtonStyle.primary
         )
         btn_main.callback = self.toggle_feature
 
         btn_channel = discord.ui.Button(
             label="Edit Channel",
-            style=discord.ButtonStyle.secondary
+            style=discord.ButtonStyle.primary
         )
         btn_channel.callback = self.channel_button_callback
 
@@ -352,8 +352,8 @@ class CV2Helper(PrivateLayoutView):
             container.add_item(discord.ui.Separator())
 
             btn_text_toggle = discord.ui.Button(
-                label=f"{'Enabled' if show_text else 'Disabled'}",
-                style=discord.ButtonStyle.primary if show_text else discord.ButtonStyle.secondary
+                label=f"{'Disable' if show_text else 'Enable'}",
+                style=discord.ButtonStyle.secondary if show_text else discord.ButtonStyle.primary
             )
             btn_text_toggle.callback = self.toggle_text
 
@@ -364,7 +364,7 @@ class CV2Helper(PrivateLayoutView):
             container.add_item(section)
 
             if show_text:
-                btn_text_config = discord.ui.Button(emoji="⚙️", label=f"Customise", style=discord.ButtonStyle.secondary)
+                btn_text_config = discord.ui.Button(label=f"Customise", style=discord.ButtonStyle.primary)
                 btn_text_config.callback = self.open_text_modal
 
                 curr_text = self.data.get("custom_message") or "Welcome to **{server.name}**, {member.mention}!"
@@ -379,8 +379,8 @@ class CV2Helper(PrivateLayoutView):
             container.add_item(discord.ui.Separator())
 
             btn_img_toggle = discord.ui.Button(
-                label=f"{'Enabled' if show_image else 'Disabled'}",
-                style=discord.ButtonStyle.primary if show_image else discord.ButtonStyle.secondary
+                label=f"{'Disable' if show_image else 'Enable'}",
+                style=discord.ButtonStyle.secondary if show_image else discord.ButtonStyle.primary
             )
             btn_img_toggle.callback = self.toggle_image
 
@@ -391,7 +391,7 @@ class CV2Helper(PrivateLayoutView):
             container.add_item(section)
 
             if show_image:
-                btn_img_config = discord.ui.Button(emoji="⚙️", label="Customise", style=discord.ButtonStyle.secondary)
+                btn_img_config = discord.ui.Button(label="Customise", style=discord.ButtonStyle.primary)
                 btn_img_config.callback = self.open_image_modal
 
                 curr_l1 = self.data.get("image_line1") or "Welcome {member.name}"
@@ -407,7 +407,7 @@ class CV2Helper(PrivateLayoutView):
 
             container.add_item(discord.ui.Separator())
 
-            btn_test = discord.ui.Button(label="Send Test Message", style=discord.ButtonStyle.secondary)
+            btn_test = discord.ui.Button(label="Send Test Message", style=discord.ButtonStyle.primary)
             btn_test.callback = self.test_button_callback
 
             container.add_item(discord.ui.TextDisplay("### Test Message"))
