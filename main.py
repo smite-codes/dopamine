@@ -127,17 +127,20 @@ class OwnerDashboard(PrivateLayoutView):
         container.add_item(discord.ui.Separator())
 
         sync_btn = discord.ui.Button(label="Sync Slash", style=discord.ButtonStyle.primary)
+        reload_btn = discord.ui.Button(label="Reload All Cogs", style=discord.ButtonStyle.primary)
         shutdown_btn = discord.ui.Button(label="Shutdown", style=discord.ButtonStyle.danger)
         restart_btn = discord.ui.Button(label="Restart", style=discord.ButtonStyle.danger)
         log_btn = discord.ui.Button(label="Show Log", style=discord.ButtonStyle.secondary)
 
         sync_btn.callback = self.sync_callback
+        reload_btn.callback = self.reload_all_callback
         shutdown_btn.callback = self.shutdown_callback
         restart_btn.callback = self.restart_callback
         log_btn.callback = self.show_log_callback
 
         action_row = discord.ui.ActionRow()
         action_row.add_item(sync_btn)
+        action_row.add_item(reload_btn)
         action_row.add_item(shutdown_btn)
         action_row.add_item(restart_btn)
         action_row.add_item(log_btn)
@@ -179,6 +182,25 @@ class OwnerDashboard(PrivateLayoutView):
 
         modal = OwnerGoToPageModal(self, total_pages)
         await interaction.response.send_modal(modal)
+
+    async def reload_all_callback(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        extensions = list(self.bot.extensions.keys())
+        reloaded = []
+        failed = []
+
+        for ext in extensions:
+            try:
+                await self.bot.reload_extension(ext)
+                reloaded.append(ext)
+            except Exception as e:
+                failed.append(f"{ext} ({e})")
+
+        status_msg = f"Reloaded {len(reloaded)} cogs."
+        if failed:
+            status_msg += f"\n**Failed:** {', '.join(failed)}"
+
+        await interaction.followup.send(status_msg, ephemeral=True)
 
     async def sync_callback(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
@@ -248,12 +270,14 @@ class OwnerGoToPageModal(discord.ui.Modal):
 
 
 async def restart_bot():
+    print()
     print("Restarting bot...")
     await signal_handler()
     os.execv(sys.executable, [sys.executable] + sys.argv)
 
 
 async def setup_hook():
+    bot.process_start_time = time.time()
     cogs_dir = os.path.join(os.path.dirname(__file__), "cogs")
 
     if os.path.exists(cogs_dir):
