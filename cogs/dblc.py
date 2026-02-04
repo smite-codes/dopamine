@@ -338,7 +338,11 @@ class Dblc(commands.Cog):
         except Exception:
             battery_status = "Host Device Battery Status: `Unable to determine`"
 
-        cpu_usage = self.current_cpu * 6
+        cpu_usage = self.current_cpu
+        if cpu_usage == 0:
+            formatted_cpu_usage = "0"
+        else:
+            formatted_cpu_usage = f"{cpu_usage:.1f}"
         embed = discord.Embed(
             title="Latency Info",
             description=(
@@ -349,7 +353,7 @@ class Dblc(commands.Cog):
                 f"> Average API Latency: `{avg_latency}ms` (over `{sample_count}` samples where each sample is average of 12 samples)\n\n"
                 f"> Connection Uptime: `{uptime_formatted}`\n"
                 f"> Process Uptime: `{proc_uptime}`\n\n"
-                f"> CPU Usage: `{cpu_usage:.1f}%`\n"
+                f"> CPU Usage: `{formatted_cpu_usage}%`\n"
                 f"> Memory Usage: `{memory_usage}`\n"
                 f"> {battery_status}"
             ),
