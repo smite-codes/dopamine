@@ -30,7 +30,7 @@ class GiveawayDraft:
     winner_role: Optional[int] = None
     image: Optional[str] = None
     thumbnail: Optional[str] = None
-    color: str = "discord.Color.blue()"
+    color: str = "discord.Color(0x8632e6)"
 
 class PrivateView(discord.ui.View):
     def __init__(self, user, *args, **kwargs):
@@ -72,7 +72,6 @@ class CreateChoose(PrivateLayoutView):
         container.add_item((discord.ui.TextDisplay("## Create Giveaway")))
         container.add_item(discord.ui.TextDisplay("Choose an option below to continue creating a giveaway. Create button leads to the regular creation menu, while the other option lets you enter a template code."))
         container.add_item(discord.ui.Separator())
-
         create_btn = discord.ui.Button(label="Create", style=discord.ButtonStyle.primary)
         create_btn.callback = self.create_callback
         template_btn = discord.ui.Button(label="Create from Template", style=discord.ButtonStyle.secondary)
@@ -86,21 +85,27 @@ class CreateChoose(PrivateLayoutView):
         self.add_item(container)
 
     async def create_callback(self, interaction: discord.Interaction):
+        seconds = get_duration_to_seconds("24h")
+        end_timestamp = get_now_plus_seconds_unix(seconds)
         draft = GiveawayDraft(
             guild_id=interaction.guild.id,
             channel_id=interaction.channel.id,
+            prize="Unspecified Prize",
+            winners=1,
+            end_time=end_timestamp
         )
 
         embed = self.cog.create_giveaway_embed(draft)
 
-        view = GiveawayPreviewView(self, draft)
+        view = GiveawayPreviewView(self.cog, self.user, draft)
 
         expires = get_now_plus_seconds_unix(900)
 
-        await interaction.response.edit_message(
+        await interaction.response.send_message(
             content=f"This is a preview of your giveaway. Configure it using the buttons below, then start it.\nThis preview expires **<t:{expires}:R>**!",
             embed=embed,
-            view=view
+            view=view,
+            ephemeral=False
         )
 
 class GiveawayEditSelect(discord.ui.Select):
@@ -331,7 +336,7 @@ class ParticipantPaginator(discord.ui.View):
         embed = discord.Embed(
             title=f"<:dopamine:1445805701355012279> Participants for **{self.prize}**",
             description=mentions,
-            color=discord.Color.blue()
+            color=discord.Color(0x8632e6)
         )
         embed.set_footer(text=f"Total Participants: {total_count} | Page {self.current_page + 1} of {total_pages}")
         return embed
@@ -376,8 +381,8 @@ class BehaviorSelect(discord.ui.Select):
         await interaction.response.send_message("Role requirement behaviour updated successfully!", ephemeral=True)
 
 class GiveawayPreviewView(PrivateView):
-    def __init__(self, cog, draft: GiveawayDraft):
-        super().__init__(timeout=900)
+    def __init__(self, cog, user, draft: GiveawayDraft):
+        super().__init__(user, timeout=900)
         self.cog = cog
         self.draft = draft
         self.message = Optional[discord.InteractionMessage]
@@ -388,25 +393,6 @@ class GiveawayPreviewView(PrivateView):
                 await self.message.edit(title="Giveaway preview expired", descrption="This giveaway preview has expired.", view=None, colour=discord.Colour.red())
             except discord.HTTPException:
                 pass
-
-    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.red)
-    async def cancel_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.edit_message(embed=discord.Embed(title="Giveaway Creation Cancelled."), view=None)
-        self.stop()
-
-    @discord.ui.button(label="Edit", style=discord.ButtonStyle.gray)
-    async def edit_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        self.message = interaction.message
-        view = discord.ui.View()
-        select = GiveawayEditSelect(cog=self.cog, draft=self.draft, parent_view=self)
-        view.add_item(select)
-
-        await interaction.response.send_message(
-            embed=discord.Embed(title="Edit Giveaway", description="Select a setting...", color=discord.Color.blue()),
-            view=view,
-            ephemeral=True
-        )
-        self.message = interaction.message
 
     @discord.ui.button(label="Start", style=discord.ButtonStyle.green)
     async def start_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -433,6 +419,25 @@ class GiveawayPreviewView(PrivateView):
         embed.set_footer(text=f"ID: {giveaway_id}")
         await interaction.response.send_message(embed=success_embed, ephemeral=True)
         await interaction.message.delete()
+        self.stop()
+
+    @discord.ui.button(label="Edit", style=discord.ButtonStyle.primary)
+    async def edit_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.message = interaction.message
+        view = discord.ui.View()
+        select = GiveawayEditSelect(cog=self.cog, draft=self.draft, parent_view=self)
+        view.add_item(select)
+
+        await interaction.response.send_message(
+            embed=discord.Embed(title="Edit Giveaway", description="Select a setting...", color=discord.Color(0x8632e6)),
+            view=view,
+            ephemeral=True
+        )
+        self.message = interaction.message
+
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
+    async def cancel_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(embed=discord.Embed(title="Giveaway Creation Cancelled."), view=None)
         self.stop()
 
 class MemberSelectView(discord.ui.View):
@@ -983,7 +988,7 @@ class Giveaways(commands.Cog):
 
     def create_giveaway_embed(self, draft: GiveawayDraft, ended: bool = False):
         title_text = "GIVEAWAY ENDED" if ended else f"{draft.prize}"
-        embed_color = discord.Color.red() if ended else discord.Color.blue()
+        embed_color = discord.Color.red() if ended else discord.Color(0x8632e6)
 
         if not ended and draft.color:
             color_str = draft.color.lower()
@@ -1082,8 +1087,8 @@ class Giveaways(commands.Cog):
 
     @giveaway.command(name="create", description="Start the giveaway creation process.")
     async def create(self, interaction: discord.Interaction):
-        view = CreateChoose(interaction.user)
-        await interaction.response.send_message(view=view)
+        view = CreateChoose(self, interaction.user)
+        await interaction.response.send_message(view=view, ephemeral=True)
 
     @giveaway.command(name="end", description="End an active giveaway (winners are also picked and mentioned).")
     @app_commands.describe(giveaway_id="The ID of the giveaway to end.")
@@ -1280,7 +1285,7 @@ class Giveaways(commands.Cog):
         embed = discord.Embed(
             title=f"All Giveaways for {interaction.guild.name}",
             description=full_list,
-            color=discord.Color.blue()
+            color=discord.Color(0x8632e6)
         )
         await interaction.edit_original_response(embed=embed)
 
