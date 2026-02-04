@@ -18,6 +18,9 @@ class Dblc(commands.Cog):
         self.bot = bot
         self.latency_cache = deque(maxlen=1440)
         self.temp_samples = []
+        self.process = psutil.Process(os.getpid())
+        self.process.cpu_percent(interval=None)
+        self.current_cpu = 0.0
         self.cache_task.start()
 
     def cog_unload(self):
@@ -25,10 +28,11 @@ class Dblc(commands.Cog):
 
     @tasks.loop(seconds=5.0)
     async def cache_task(self):
+
         if not self.bot.is_ready():
             return
-
         try:
+            self.current_cpu = self.process.cpu_percent(interval=None)
             try:
                 start = time.perf_counter()
                 await self.bot.http.request(discord.http.Route("GET", "/gateway"))
@@ -318,10 +322,8 @@ class Dblc(commands.Cog):
                 memory_gb = int(memory_mb // 1024)
                 memory_remaining_mb = round(memory_mb % 1024, 2)
                 memory_usage = f"{memory_gb}GB {memory_remaining_mb}MB"
-                cpu_usage = process.cpu_percent(interval=None)
             else:
                 memory_usage = f"{round(memory_mb, 2)}MB"
-                cpu_usage = "N/A"
         except Exception:
             memory_usage = "Unable to calculate"
 
@@ -336,6 +338,7 @@ class Dblc(commands.Cog):
         except Exception:
             battery_status = "Host Device Battery Status: `Unable to determine`"
 
+        cpu_usage = self.current_cpu * 6
         embed = discord.Embed(
             title="Latency Info",
             description=(
@@ -346,7 +349,7 @@ class Dblc(commands.Cog):
                 f"> Average API Latency: `{avg_latency}ms` (over `{sample_count}` samples where each sample is average of 12 samples)\n\n"
                 f"> Connection Uptime: `{uptime_formatted}`\n"
                 f"> Process Uptime: `{proc_uptime}`\n\n"
-                f"> CPU Usage: `{cpu_usage}`\n"
+                f"> CPU Usage: `{cpu_usage:.1f}%`\n"
                 f"> Memory Usage: `{memory_usage}`\n"
                 f"> {battery_status}"
             ),
