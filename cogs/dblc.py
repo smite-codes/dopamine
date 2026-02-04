@@ -293,6 +293,9 @@ class Dblc(commands.Cog):
             sample_count = 0
         start_time = time.time()
         await interaction.response.send_message(initial_message)
+        gateway_raw = str(self.bot.ws.gateway)
+        gateway_node = gateway_raw.split('gateway-')[-1].split('.')[
+            0] if 'gateway-' in gateway_raw else "Global/Unknown"
         end_time = time.time()
         round_latency = round((end_time - start_time) * 1000)
         discord_latency = round(self.bot.latency * 1000)
@@ -347,6 +350,8 @@ class Dblc(commands.Cog):
             title="Latency Info",
             description=(
                 f"> Bot Version: `{bot_version}`\n\n"
+                f"> Connected to Discord Gateway: `{gateway_node}`\n"
+                "> Bot Host Location: `South Asia`\n\n"
                 f"> API Latency: `{connection_latency}ms`\n"
                 f"> Round-trip Latency: `{round_latency}ms`\n"
                 f"> Heartbeat/WebSocket Latency: `{discord_latency}ms`\n\n"
