@@ -1,15 +1,13 @@
 ﻿
 # Dopamine
 
-Dopamine is a feature-rich Discord moderation and utility bot built with a focus on performance and ease of use. Originally designed as a private project to express creativity and give back to the Discord community, it is now open-sourced under the AGPL-3.0 license.
-
-The bot is designed to handle everything from point-based moderation to automated server engagement tools like Haiku detection and scheduled messages.
-
-This a 100% free-to-use, non-profit Discord bot (solo) project by LikerOfTurtles.
+A Premium Experience, Minus the paywalls and nick-and-diming. Dopamine is a moderation and utility bot built to be easy to use and customisable while remaining 100% free to use with no paywalls. 
 
 # Invite Dopamine
 
-Invite the official, pre-hosted Dopamine bot (no self-hosting required) by clicking [__here__](https://top.gg/bot/1411266382380924938).
+Invite Dopamine today by [__clicking here__](https://discord.com/oauth2/authorize?client_id=1411266382380924938).
+
+If you have any questions, suggestions, or issues, you can join the support server by clicking [__here__](https://discord.gg/b3eUjydwcQ)
 
 # Features
 
@@ -32,6 +30,28 @@ Invite the official, pre-hosted Dopamine bot (no self-hosting required) by click
 * Member Tracker: Tracks server growth with customizable embeds and goal-setting.
 
 * Global Notes: Store and retrieve notes across any server where the bot is present (requires user-install/profile addition).
+
+# Why Dopamine?
+
+| Feature                            |     **Dopamine**     | **Other Corporate Bots** |
+|:-----------------------------------|:--------------------:|:------------------------:|
+| **Completely Free To Use**         |        **✅**         |          **❌**           |
+| **Multi-Purpose**                  |        **✅**         |          **✅**           |
+| **Zero Paywalls**                  |        **✅**         |          **❌**           |
+| **Open Source**                    | **✅** |          **❌**           |
+| **Advanced Moderation**            |     **✅**     |          **❌**           |
+| **Easy-To-Use in-Discord UI**      |   **✅**    |          **❌**           |
+| **24/7 Uptime**                    |   **✅**    |          **✅**           |
+| **Zero Data Selling Policy**       |  **✅**   |          **❌**           |
+| **Self-Hostable**                  | **✅**  |          **❌**           |
+| **User-first Philosophy**          | **✅**  |          **❌**           |
+| **Gives you that hit of Dopamine** | **✅**  |          **❌**           |
+
+# The Team
+
+Dopamine is a **solo-project** by me, **Smite**. And I plan to keep it that way for the foreseeable future.
+
+I started this project as a simple point-based moderation bot because I really like the concept - Now, it has evolved into a whole ecosystem of features within just six months.
 
 # Installation & Setup
 
