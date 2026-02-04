@@ -82,37 +82,37 @@ class Dblc(commands.Cog):
         if num_samples < 2:
             return None
 
-        total_minutes_covered = num_samples
-
-        max_lat = max(data) if max(data) > 0 else 1
-        y_limit = max_lat * 1.3
+        max_val = max(data) if data else 100
+        steps = [10, 25, 50, 100, 250, 500, 1000]
+        target_step = next((s for s in steps if s > max_val / 4), max_val / 4)
+        y_limit = target_step * 4
 
         grid_color = (60, 62, 68, 255)
         num_y_labels = 4
+        graph_height = height - pad_top - pad_bot
         for i in range(num_y_labels + 1):
-            val = (y_limit / num_y_labels) * i
-            y = (height - pad_bot) - (i / num_y_labels) * (height - pad_top - pad_bot)
+            val = target_step * i
+            y = (height - pad_bot) - (val / y_limit) * graph_height
             draw.line([(pad_left, y), (width - pad_right, y)], fill=grid_color, width=1 * scale_factor)
             draw.text((pad_left - 15, y), f"{int(val)}ms", fill=(180, 180, 180), anchor="rm",
                       font_size=12 * scale_factor)
 
         graph_width = width - pad_left - pad_right
-        graph_height = height - pad_top - pad_bot
 
-        num_x_labels = 5
-        for i in range(num_x_labels):
-            sample_idx = int((i / (num_x_labels - 1)) * (num_samples - 1))
+        total_mins = len(data)
+        if total_mins <= 60:
+            interval = 10
+        elif total_mins <= 180:
+            interval = 30
+        else:
+            interval = 60
 
-            x = pad_left + (i / (num_x_labels - 1)) * graph_width
+        for mins_ago in range(0, total_mins, interval):
+            x = pad_left + ((total_mins - 1 - mins_ago) / (total_mins - 1)) * graph_width
 
-            mins_ago = num_samples - 1 - sample_idx
-
-            if mins_ago == 0:
-                label = "Now"
-            elif mins_ago >= 60:
+            label = "Now" if mins_ago == 0 else f"{mins_ago}m"
+            if mins_ago >= 60:
                 label = f"{round(mins_ago / 60, 1)}h"
-            else:
-                label = f"{mins_ago}m"
 
             draw.line([(x, height - pad_bot), (x, height - pad_bot + 10)], fill=(150, 150, 150), width=2)
             draw.text((x, height - pad_bot + 25), label, fill=(150, 150, 150), anchor="mt", font_size=12 * scale_factor)
