@@ -4,6 +4,7 @@ import asyncio
 import time
 import sys
 import signal
+import asyncio
 import discord
 from discord.ext import commands, tasks
 from config import TOKEN, LOGGING_DEBUG_MODE
@@ -277,6 +278,10 @@ async def restart_bot():
 
 async def setup_hook():
     bot.process_start_time = time.time()
+
+    bot.monitor = ConnectionMonitor(bot)
+    bot.monitor.monitor_connection.start()
+
     cogs_dir = os.path.join(os.path.dirname(__file__), "cogs")
 
     if os.path.exists(cogs_dir):
@@ -353,6 +358,51 @@ async def on_ready():
     )
     bot.start_time = time.time()
 
+
+class ConnectionMonitor:
+    def __init__(self, bot):
+        self.bot = bot
+        self.fail_count = 0
+        self.is_reconnecting = False
+
+    @tasks.loop(seconds=30)
+    async def monitor_connection(self):
+        if self.is_reconnecting:
+            return
+
+        latency = self.bot.latency
+
+        if not self.bot.is_ready() or latency != latency or latency > 15:
+            self.fail_count += 1
+            logger.warning(f"Connection check failed ({self.fail_count}/2)")
+            print(f"Connection check failed ({self.fail_count}/2)")
+        else:
+            self.fail_count = 0
+
+        if self.fail_count >= 2:
+            await self.reconnect_logic()
+
+    async def reconnect_logic(self):
+        self.is_reconnecting = True
+        logger.error("Connection lost. Attempting manual reconnect...")
+        print("Connection lost. Attempting manual reconnect...")
+
+        while not self.bot.is_closed():
+            try:
+                await self.bot.close()
+                await asyncio.sleep(5)
+
+                await self.bot.login(TOKEN)
+                await self.bot.connect()
+                logger.info("Successfully reconnected to Discord Gateway.")
+                print("Successfully reconnected to Discord Gateway.")
+                self.fail_count = 0
+                self.is_reconnecting = False
+                break
+            except Exception as e:
+                logger.error(f"Reconnect failed: {e}. Retrying in 30s...")
+                print(f"Reconnect failed: {e}. Retrying in 30s...")
+                await asyncio.sleep(30)
 
 @bot.tree.command(name="zc", description=".")
 async def zc(interaction: discord.Interaction):
