@@ -46,6 +46,63 @@ class PrivateView(discord.ui.View):
             return False
         return True
 
+class PrivateLayoutView(discord.ui.LayoutView):
+    def __init__(self, user, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.user = user
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.user.id:
+            await interaction.response.send_message(
+                "This isn't for you!",
+                ephemeral=True
+            )
+            return False
+        return True
+
+class CreateChoose(PrivateLayoutView):
+    def __init__(self, cog, user):
+        super().__init__(user, timeout=None)
+        self.cog = cog
+        self.build_layout()
+
+    def build_layout(self):
+        self.clear_items()
+        container = discord.ui.Container()
+        container.add_item((discord.ui.TextDisplay("## Create Giveaway")))
+        container.add_item(discord.ui.TextDisplay("Choose an option below to continue creating a giveaway. Create button leads to the regular creation menu, while the other option lets you enter a template code."))
+        container.add_item(discord.ui.Separator())
+
+        create_btn = discord.ui.Button(label="Create", style=discord.ButtonStyle.primary)
+        create_btn.callback = self.create_callback
+        template_btn = discord.ui.Button(label="Create from Template", style=discord.ButtonStyle.secondary)
+        row = discord.ui.ActionRow()
+
+        row.add_item(create_btn)
+        row.add_item(template_btn)
+
+        container.add_item(row)
+
+        self.add_item(container)
+
+    async def create_callback(self, interaction: discord.Interaction):
+        draft = GiveawayDraft(
+            guild_id=interaction.guild.id,
+            channel_id=interaction.channel.id,
+        )
+
+        embed = self.cog.create_giveaway_embed(draft)
+
+        view = GiveawayPreviewView(self, draft)
+
+        expires = get_now_plus_seconds_unix(900)
+
+        await interaction.response.edit_message(
+            content=f"This is a preview of your giveaway. Configure it using the buttons below, then start it.\nThis preview expires **<t:{expires}:R>**!",
+            embed=embed,
+            view=view
+        )
+
 class GiveawayEditSelect(discord.ui.Select):
     def __init__(self, cog, draft: GiveawayDraft, parent_view):
         self.cog = cog
@@ -552,20 +609,6 @@ class GiveawayJoinView(discord.ui.View):
         view = ParticipantPaginator(bot=self.cog.bot, participants=participants, prize=prize, extra_roles=extra_roles_list, guild=interaction.guild)
         await interaction.response.send_message(embed=view.get_embed(), view=view, ephemeral=True)
 
-class PrivateLayoutView(discord.ui.LayoutView):
-    def __init__(self, user, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.user = user
-
-    async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        if interaction.user.id != self.user.id:
-            await interaction.response.send_message(
-                "This isn't for you!",
-                ephemeral=True
-            )
-            return False
-        return True
-
 class DestructiveConfirmationView(PrivateLayoutView):
     def __init__(self, title_text: str, body_text: str, color: discord.Color = None):
         super().__init__(timeout=30)
@@ -1038,46 +1081,9 @@ class Giveaways(commands.Cog):
     giveaway = app_commands.Group(name="giveaway", description="Commands for Dopamine's giveaway features.")
 
     @giveaway.command(name="create", description="Start the giveaway creation process.")
-    @app_commands.describe(
-        prize="What is being given away",
-        duration="How long the giveaway should last (eg. 6d, 7h, 6m, 7mon)",
-        winners="The number of winners of the giveaway (defaults to one)",
-        channel="The channel where the giveaway will be hosted (defaults to current channel)"
-    )
-    async def giveaway_create(
-        self,
-        interaction: discord.Interaction,
-        prize: Optional[str] = "Unspecified Prize",
-        duration: Optional[str] = "24h",
-        winners: app_commands.Range[int, 1, 50] = 1,
-        channel: Optional[discord.TextChannel] = None):
-        seconds = get_duration_to_seconds(duration)
-        if seconds <= 0:
-            return await interaction.response.send_message('Invalid duration format! Use things like "6d", "7h", or "21m".', ephemeral=True)
-
-        end_timestamp = get_now_plus_seconds_unix(seconds)
-
-        channel = channel or interaction.channel
-
-        draft = GiveawayDraft(
-            guild_id=interaction.guild.id,
-            channel_id=channel.id,
-            prize=prize,
-            winners=winners,
-            end_time=end_timestamp
-        )
-
-        embed = self.create_giveaway_embed(draft)
-
-        view = GiveawayPreviewView(self, draft)
-
-        expires = get_now_plus_seconds_unix(900)
-
-        await interaction.response.send_message(
-            content=f"This is a preview of your giveaway. Configure it using the buttons below, then start it.\nThis preview expires **<t:{expires}:R>**!",
-            embed=embed,
-            view=view
-        )
+    async def create(self, interaction: discord.Interaction):
+        view = CreateChoose(interaction.user)
+        await interaction.response.send_message(view=view)
 
     @giveaway.command(name="end", description="End an active giveaway (winners are also picked and mentioned).")
     @app_commands.describe(giveaway_id="The ID of the giveaway to end.")
