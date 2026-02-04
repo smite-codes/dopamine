@@ -1,7 +1,7 @@
 ﻿
 # Dopamine
 
-A Premium Experience, Minus the paywalls and nick-and-diming. Dopamine is a moderation and utility bot built to be easy to use and customisable while remaining 100% free to use with no paywalls. 
+A Premium Experience, Minus the paywalls and nick-and-diming. Dopamine is a moderation and utility bot built to be easy to use and customisable while remaining 100% free to use with no paywalls. If it exists in the bot, you can use it.
 
 # Invite Dopamine
 
