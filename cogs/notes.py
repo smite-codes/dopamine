@@ -156,7 +156,7 @@ class Notes(commands.Cog):
                 embed = discord.Embed(
                     title="Note Updated Successfully",
                     description=f"New Note Title: **{new_name}**\n\nNew Note Content: **{new_content}**",
-                    color=discord.Color(0x8632e6)
+                    color=discord.Color(0x944ae8)
                 )
                 await interaction.response.send_message(embed=embed, ephemeral=True)
 

@@ -175,7 +175,7 @@ class Alerts(commands.Cog):
             embed = discord.Embed(
                 title="No Active Alerts",
                 description="There are currently no active alerts.",
-                color=discord.Color(0x8632e6),
+                color=discord.Color(0x944ae8),
             )
             return await interaction.response.send_message(embed=embed, ephemeral=True)
 

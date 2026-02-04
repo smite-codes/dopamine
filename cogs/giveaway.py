@@ -30,7 +30,7 @@ class GiveawayDraft:
     winner_role: Optional[int] = None
     image: Optional[str] = None
     thumbnail: Optional[str] = None
-    color: str = "discord.Color(0x8632e6)"
+    color: str = "discord.Color(0x944ae8)"
 
 class PrivateView(discord.ui.View):
     def __init__(self, user, *args, **kwargs):

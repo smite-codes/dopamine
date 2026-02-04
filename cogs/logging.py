@@ -101,7 +101,7 @@ class Logging(commands.Cog):
         embed = discord.Embed(
             title="This channel has been set as the log channel.",
             description=f"All moderation logs will now be sent here.",
-            color=discord.Color(0x8632e6)
+            color=discord.Color(0x944ae8)
         )
         embed.set_footer(text=f"Set by {interaction.user}", icon_url=interaction.user.display_avatar.url)
         channel = self.bot.get_channel(channel.id)
