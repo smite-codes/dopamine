@@ -16,7 +16,7 @@ class PrivateLayoutView(discord.ui.LayoutView):
             return False
         return True
 
-class AutoreactDashboard(PrivateLayoutView):
+class CreateChoose(PrivateLayoutView):
     def __init__(self):
         super().__init__(timeout=None)
         self.build_layout()
@@ -24,20 +24,16 @@ class AutoreactDashboard(PrivateLayoutView):
     def build_layout(self):
         self.clear_items()
         container = discord.ui.Container()
-        container.add_item((discord.ui.TextDisplay("## Autoreact Dashboard")))
-        container.add_item(discord.ui.TextDisplay("Set up Dopamine to automatically react to messages in a channel with one or more emojis."))
-        container.add_item(discord.ui.Separator())
-        container.add_item(discord.ui.TextDisplay("* **Emojis:** You can add up to three emojis per Autoreact panel. Order the emojis in the same order in which you want them to be added in, separated by commas."))
-        container.add_item(discord.ui.TextDisplay("* **Image-only Mode:** Dopamine will only react to messages which contain an image."))
-        container.add_item(discord.ui.TextDisplay("* **Member Whitelist Mode:** Dopamine will only react to messages from specific members. Add upto 25 members."))
+        container.add_item((discord.ui.TextDisplay("## Create Giveaway")))
+        container.add_item(discord.ui.TextDisplay("Choose an option below to continue creating a giveaway. Create button leads to the regular creation menu, while the other option lets you enter a template code."))
         container.add_item(discord.ui.Separator())
 
         create_btn = discord.ui.Button(label="Create", style=discord.ButtonStyle.primary)
-        manage_btn = discord.ui.Button(label="Manage & Edit", style=discord.ButtonStyle.secondary)
+        template_btn = discord.ui.Button(label="Create from Template", style=discord.ButtonStyle.secondary)
         row = discord.ui.ActionRow()
 
         row.add_item(create_btn)
-        row.add_item(manage_btn)
+        row.add_item(template_btn)
 
         container.add_item(row)
 
