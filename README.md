@@ -73,11 +73,9 @@ I started this project as a simple point-based moderation bot because I really l
 
 ```pip install -r requirements.txt```
 
-3. Add these lines to a .env file in the root folder:
+3. Add this to a .env file in the root folder:
 
 ```DISCORD_TOKEN=YourTokenHere```
-
-```OVERRIDE_VOTEWALL=True```
 
 4. Run the bot:
 
