@@ -205,7 +205,7 @@ class ChannelSelectView(PrivateLayoutView):
         channel_id = self.select.values[0].id
         guild_id = self.guild.id
         count = self.guild.member_count
-        default_color = 0x337fd5
+        default_color = 0x8632e6
 
         async with self.cog.acquire_db() as db:
             await db.execute('''
@@ -353,7 +353,7 @@ class TrackerDashboard(PrivateLayoutView):
         guild_id = self.guild.id
 
         count = self.guild.member_count
-        default_color = 0x337fd5
+        default_color = 0x8632e6
 
         async with self.cog.acquire_db() as db:
             await db.execute('''
@@ -549,7 +549,7 @@ class MemberCountTracker(commands.Cog):
             else:
                 msg = f"{guild.name} now has **{current_count}** members!"
 
-            embed = discord.Embed(description=msg, color=data['color'] or 0x337fd5)
+            embed = discord.Embed(description=msg, color=data['color'] or 0x8632e6)
 
             try:
                 await channel.send(embed=embed)

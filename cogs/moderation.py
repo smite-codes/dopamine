@@ -1135,7 +1135,7 @@ class Points(commands.Cog):
 
         embed = discord.Embed(
             description=f"## {term} Updated\n\n{term} removed: **{amount}**\nOld: **{old_points}** | New: **{new_points}**\n\n{f"**Reason**: {reason}" if reason else "**Reason**: No reason provided."}",
-            color=discord.Color.blue()
+            color=discord.Color(0x8632e6)
         )
         embed.set_author(name=f"{member.name} ({member.id})", icon_url=member.display_avatar.url)
         await interaction.response.send_message(embed=embed)
@@ -1146,7 +1146,7 @@ class Points(commands.Cog):
                 log_embed = discord.Embed(
                     description=(f"## {term} Updated\n\n{term} removed: **{amount}**\n\n"
                                  f"Old {term}**:{old_points}**\nNew {term}**:{new_points}**\n\n**Reason**: {reason}"),
-                    color=discord.Color(0x337fd5)
+                    color=discord.Color(0x8632e6)
                 )
                 log_embed.set_author(name=f"{member.name} ({member.id})", icon_url=member.display_avatar.url)
                 log_embed.set_footer(text=f"by {interaction.user}", icon_url=interaction.user.display_avatar.url)
@@ -1179,7 +1179,7 @@ class Points(commands.Cog):
             log_ch = await self.get_log_channel(interaction.guild)
             if log_ch:
                 log_embed = discord.Embed(description=f"**{user.name}** has been unbanned.\n\n**Reason**: {reason}",
-                                          color=discord.Color(0x337fd5))
+                                          color=discord.Color(0x8632e6))
                 log_embed.set_author(name=f"{user.name} ({user.id})", icon_url=user.display_avatar.url)
                 log_embed.set_footer(text=f"by {interaction.user}", icon_url=interaction.user.display_avatar.url)
                 await log_ch.send(embed=log_embed)
@@ -1210,7 +1210,7 @@ class Points(commands.Cog):
 
         embed = discord.Embed(
             description=f"## {term} info\n\n{term}: **{data['points']}**\nLast punishment: **{last_p}**\nLast decay: **{last_d}**",
-            color=discord.Color.blue()
+            color=discord.Color(0x8632e6)
         )
         embed.set_author(name=f"{user.name} ({user.id})", icon_url=user.display_avatar.url)
         await interaction.response.send_message(embed=embed)

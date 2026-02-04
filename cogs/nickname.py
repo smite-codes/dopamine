@@ -327,7 +327,7 @@ class Nickname(commands.Cog):
             description = (
                 f"{member.mention} has been **{action_text}**.\n\n"
                 f"User is now {'ignored' if status else 'no longer ignored'} by the nickname moderator."),
-                colour=discord.Colour(0x337fd5)
+                colour=discord.Colour(0x8632e6)
                           )
         embed.set_footer(
             text=f"{footer_text} by {author.name}",
@@ -549,7 +549,7 @@ class Nickname(commands.Cog):
         embed = discord.Embed(
             title="Nickname Moderation",
             description=embed_description,
-            color=discord.Colour(0x337fd5)
+            color=discord.Colour(0x8632e6)
         )
         embed.set_footer(text="Use the buttons below to toggle modes or to customize the placeholder.")
         view = NicknameModeratorView(self, guild_id)
@@ -577,14 +577,14 @@ class Nickname(commands.Cog):
         await interaction.response.send_message(embed=discord.Embed(
             title="Verified Members for Nickname Moderator",
             description=first_description,
-            color=discord.Colour(0x337fd5)
+            color=discord.Colour(0x8632e6)
         ), ephemeral=True)
 
         for chunk in chunks[1:]:
             extra_description = "\n".join(chunk)
             await interaction.followup.send(embed=discord.Embed(
                 description=extra_description,
-                color=discord.Colour(0x337fd5)
+                color=discord.Colour(0x8632e6)
             ), ephemeral=True)
 
     @commands.command("update_profanity_database")

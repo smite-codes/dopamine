@@ -144,7 +144,7 @@ class Dblc(commands.Cog):
         embed = discord.Embed(
             title=f"{user.name}",
             description="### User Avatar",
-            color=discord.Color(0x337fd5)
+            color=discord.Color(0x8632e6)
         )
         embed.set_image(url=user.avatar.url if user.avatar else user.default_avatar.url)
         await interaction.response.send_message(embed=embed)

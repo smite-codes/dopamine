@@ -5,7 +5,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-EMBED_COLOR = discord.Color(0x337fd5)
+EMBED_COLOR = discord.Color(0x8632e6)
 VOTE_URL = "https://top.gg/bot/1411266382380924938/vote"
 SUPPORT_URL = "https://discord.gg/VWDcymz648"
 VOTE_EMOJI = "🔒"

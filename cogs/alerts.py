@@ -175,7 +175,7 @@ class Alerts(commands.Cog):
             embed = discord.Embed(
                 title="No Active Alerts",
                 description="There are currently no active alerts.",
-                color=discord.Color(0x337fd5),
+                color=discord.Color(0x8632e6),
             )
             return await interaction.response.send_message(embed=embed, ephemeral=True)
 
@@ -251,7 +251,7 @@ class Alerts(commands.Cog):
                 embed = discord.Embed(
                     title="Unread Alert!",
                     description="You have an unread alert. Use </alert:1445801945775214715> to read it!",
-                    color=0x337fd5
+                    color=0xFFFFFF
                 )
                 await interaction.followup.send(embed=embed, ephemeral=True)
             except:
