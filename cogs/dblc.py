@@ -99,20 +99,20 @@ class Dblc(commands.Cog):
 
         graph_width = width - pad_left - pad_right
 
-        total_mins = len(data)
-        if total_mins <= 60:
-            interval = 10
-        elif total_mins <= 180:
-            interval = 30
-        else:
-            interval = 60
+        num_x_labels = 5
+        for i in range(num_x_labels):
+            sample_idx = int((i / (num_x_labels - 1)) * (num_samples - 1))
 
-        for mins_ago in range(0, total_mins, interval):
-            x = pad_left + ((total_mins - 1 - mins_ago) / (total_mins - 1)) * graph_width
+            x = pad_left + (i / (num_x_labels - 1)) * graph_width
 
-            label = "Now" if mins_ago == 0 else f"{mins_ago}m"
-            if mins_ago >= 60:
+            mins_ago = num_samples - 1 - sample_idx
+
+            if mins_ago == 0:
+                label = "Now"
+            elif mins_ago >= 60:
                 label = f"{round(mins_ago / 60, 1)}h"
+            else:
+                label = f"{mins_ago}m"
 
             draw.line([(x, height - pad_bot), (x, height - pad_bot + 10)], fill=(150, 150, 150), width=2)
             draw.text((x, height - pad_bot + 25), label, fill=(150, 150, 150), anchor="mt", font_size=12 * scale_factor)
