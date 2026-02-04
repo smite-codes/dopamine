@@ -241,7 +241,7 @@ class ManagePage(PrivateLayoutView):
         container.add_item(discord.ui.Separator())
 
         if not panels:
-            container.add_item(discord.ui.TextDisplay("*No sticky messages found.*"))
+            container.add_item(discord.ui.TextDisplay("*No Sticky Messages found.*"))
         else:
             for idx, panel in enumerate(panels, start_idx + 1):
                 p_title = panel['title']
