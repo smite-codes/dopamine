@@ -57,7 +57,7 @@ I started this project as a simple point-based moderation bot because I really l
 
 ### Prerequisites:
 
-* Python 3.9 or higher.
+* Python 3.12 or higher.
 
 * A Discord Bot Token (via Discord Developer Portal)
 
