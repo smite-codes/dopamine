@@ -29,6 +29,7 @@ HWDDB_PATH = str(BASE_DIR / "databases" / "haiku_words.db")
 NOTEDB_PATH = str(BASE_DIR / "databases" / "notes.db")
 MCTDB_PATH = str(BASE_DIR / "databases" / "member_count_tracker.db")
 SDB_PATH = str(BASE_DIR / "databases" / "starboard.db")
+SKDB_PATH = str(BASE_DIR / "databases" / "skullboard.db")
 ALERTDB_PATH = str(BASE_DIR / "databases" / "alerts.db")
 MAX_PATH = BASE_DIR / "databases" / "MAXWITHSTRAPON.jpg"
 FONT_PATH = BASE_DIR / "databases" / "max.ttf"
