@@ -16,7 +16,7 @@ class PrivateLayoutView(discord.ui.LayoutView):
             return False
         return True
 
-class CreateChoose(PrivateLayoutView):
+class TemplateHomepage(PrivateLayoutView):
     def __init__(self):
         super().__init__(timeout=None)
         self.build_layout()
@@ -24,22 +24,22 @@ class CreateChoose(PrivateLayoutView):
     def build_layout(self):
         self.clear_items()
         container = discord.ui.Container()
-        container.add_item((discord.ui.TextDisplay("## Create Giveaway")))
-        container.add_item(discord.ui.TextDisplay("Choose an option below to continue creating a giveaway. Create button leads to the regular creation menu, while the other option lets you enter a template code."))
+        container.add_item((discord.ui.TextDisplay("## Giveaway Templates")))
+        container.add_item(discord.ui.TextDisplay("Giveaway Templates allow you to quicky start a giveaway without needing to manually make one from scratch. To create a new template, go to My Stuff. To browse through the list of user-created templates, click on Browse Templates."))
         container.add_item(discord.ui.Separator())
 
-        create_btn = discord.ui.Button(label="Create", style=discord.ButtonStyle.primary)
-        template_btn = discord.ui.Button(label="Create from Template", style=discord.ButtonStyle.secondary)
+        repo_btn = discord.ui.Button(label="Browse Templates", style=discord.ButtonStyle.primary)
+        my_btn = discord.ui.Button(label="My Stuff", style=discord.ButtonStyle.secondary)
         row = discord.ui.ActionRow()
 
-        row.add_item(create_btn)
-        row.add_item(template_btn)
+        row.add_item(repo_btn)
+        row.add_item(my_btn)
 
         container.add_item(row)
 
         self.add_item(container)
 
-class ManagePage(PrivateLayoutView):
+class MystuffPage(PrivateLayoutView):
     def __init__(self):
         super().__init__(timeout=None)
         self.build_layout()
@@ -47,17 +47,96 @@ class ManagePage(PrivateLayoutView):
     def build_layout(self):
         self.clear_items()
         container = discord.ui.Container()
-        container.add_item((discord.ui.TextDisplay("## Manage Autoreact Panels")))
-        container.add_item(discord.ui.TextDisplay("List of all existing Autoreact Panels. Click Edit to configure details or the channel."))
+        container.add_item((discord.ui.TextDisplay("## My Stuff")))
+        container.add_item(discord.ui.TextDisplay("Manage all your templates here. Publish a template, edit it, or create a new one."))
         container.add_item(discord.ui.Separator())
+
         edit_btn = discord.ui.Button(label="Edit", style=discord.ButtonStyle.secondary)
-        container.add_item(discord.ui.Section(discord.ui.TextDisplay("### 1. Panel Name in {channel}"), accessory=edit_btn))
+
+        container.add_item(discord.ui.Section(discord.ui.TextDisplay(
+            "### 1. Prize Name\n**Winners:** placeholder\n**Duration:** placeholder (duration, not end time)\n**Channel:** placeholder\n**Giveaway Host:** placeholder\n**Extra Entries Role:** placeholder\n**Required Roles:** placeholder\n**Required Roles Behaviour:** placeholder\n**Winner Role:** placeholder\n**Blacklisted Roles** placeholder\n**Embed Image:** placeholder for yes (only shown if there is one)\n**Embed Thumbnail:** placeholder for yes (only shown if there is one)\n**Colour:** placeholder (default if default)"),
+                                              accessory=edit_btn))
         container.add_item(discord.ui.TextDisplay("-# Page 1 of 1"))
         container.add_item(discord.ui.Separator())
-        left_btn = discord.ui.Button(emoji="◀", style=discord.ButtonStyle.primary, disabled=1==1)
-        go_btn = discord.ui.Button(label="Go To Page", style=discord.ButtonStyle.secondary, disabled=2==2)
-        right_btn = discord.ui.Button(emoji="▶", style=discord.ButtonStyle.primary, disabled=3==3)
+        left_btn = discord.ui.Button(emoji="◀️", style=discord.ButtonStyle.primary,
+                                     disabled=1 == 1)
+        go_btn = discord.ui.Button(label="Go to Page", style=discord.ButtonStyle.secondary,
+                                   disabled=2 == 2)
+        right_btn = discord.ui.Button(emoji="◀▶️", style=discord.ButtonStyle.primary,
+                                      disabled=3 == 3)
+        row = discord.ui.ActionRow()
 
+        row.add_item(left_btn)
+        row.add_item(go_btn)
+        row.add_item(right_btn)
+
+        container.add_item(row)
+        container.add_item(discord.ui.Separator())
+        create_btn = discord.ui.Button(label="Create New Template", style=discord.ButtonStyle.primary)
+        row = discord.ui.ActionRow()
+
+        row.add_item(create_btn)
+
+        container.add_item(row)
+
+        self.add_item(container)
+
+
+class EditPage(PrivateLayoutView):
+    def __init__(self):
+        super().__init__(timeout=None)
+        self.build_layout()
+
+    def build_layout(self):
+        self.clear_items()
+        container = discord.ui.Container()
+        container.add_item((discord.ui.TextDisplay("## Edit: prizename")))
+        container.add_item(discord.ui.Separator())
+
+        container.add_item(discord.ui.TextDisplay(
+            "**Winners:** placeholder\n**Duration:** placeholder (duration, not end time)\n**Channel:** placeholder\n**Giveaway Host:** placeholder\n**Extra Entries Role:** placeholder\n**Required Roles:** placeholder\n**Required Roles Behaviour:** placeholder\n**Winner Role:** placeholder\n**Blacklisted Roles** placeholder\n**Embed Image:** placeholder for yes (only shown if there is one)\n**Embed Thumbnail:** placeholder for yes (only shown if there is one)\n**Colour:** placeholder (default if default)"))
+
+        container.add_item(discord.ui.Separator())
+        edit_btn = discord.ui.Button(label="Edit",
+                                       style=discord.ButtonStyle.secondary)
+        publish_btn = discord.ui.Button(label="{'Publish' if 1==1 else 'Unpublish'}",
+                                       style=discord.ButtonStyle.primary if 1==1 else discord.ButtonStyle.secondary)
+        delete_btn = discord.ui.Button(label="Delete", style=discord.ButtonStyle.danger)
+        row = discord.ui.ActionRow()
+
+        row.add_item(publish_btn)
+        row.add_item(edit_btn)
+        row.add_item(delete_btn)
+
+        container.add_item(row)
+
+        self.add_item(container)
+
+class BrowsePage(PrivateLayoutView):
+    def __init__(self):
+        super().__init__(timeout=None)
+        self.build_layout()
+
+    def build_layout(self):
+        self.clear_items()
+        container = discord.ui.Container()
+        container.add_item((discord.ui.TextDisplay("## Browse — 23 (if exclude global is enabled, it shows the count of templates in current guild) Total Templates")))
+        container.add_item(discord.ui.TextDisplay("Browse Giveaway templates here. Use the buttons and dropdowns below to search, or sort."))
+        container.add_item(discord.ui.Separator())
+
+        use_btn = discord.ui.Button(label="Use", style=discord.ButtonStyle.primary)
+        usee_btn = discord.ui.Button(label="Use", style=discord.ButtonStyle.primary)
+        container.add_item(discord.ui.Section(discord.ui.TextDisplay(
+            "### 1. Prize Name (Created by: creatorname in guildname) - placeholder for number of usages (only shown if sorting my usage)\n**Template ID:** [adjective-noun-number]\n**Winners:** placeholder\n**Duration:** placeholder (duration, not end time)\n**Embed Image:** placeholder for yes (only shown if there is one)\n**Embed Thumbnail:** placeholder for yes (only shown if there is one)\n**Colour:** placeholder (default if default)"),
+                                              accessory=use_btn))
+        container.add_item(discord.ui.Section(discord.ui.TextDisplay(
+            "### 2. Prize Name (Created by: creatorname)\n**Template ID:** [adjective-noun-number]\n**Winners:** placeholder\n**Duration:** placeholder (duration, not end time)\n**Channel:** placeholder\n**Giveaway Host:** placeholder\n**Extra Entries Role:** placeholder\n**Required Roles:** placeholder\n**Required Roles Behaviour:** placeholder\n**Winner Role:** placeholder\n**Blacklisted Roles** placeholder\n**Embed Image:** placeholder for yes (only shown if there is one)\n**Embed Thumbnail:** placeholder for yes (only shown if there is one)\n**Colour:** placeholder (default if default)"),
+                                              accessory=usee_btn))
+        container.add_item(discord.ui.TextDisplay("-# Page 1 of 1"))
+        container.add_item(discord.ui.Separator())
+        left_btn = discord.ui.Button(emoji="◀️", style=discord.ButtonStyle.primary, disabled=1==1)
+        go_btn = discord.ui.Button(label="Go to Page", style=discord.ButtonStyle.secondary, disabled=2==2)
+        right_btn = discord.ui.Button(emoji="◀▶️", style=discord.ButtonStyle.primary, disabled=3==3)
         row = discord.ui.ActionRow()
 
         row.add_item(left_btn)
@@ -68,17 +147,30 @@ class ManagePage(PrivateLayoutView):
 
         container.add_item(discord.ui.Separator())
 
-        return_btn = discord.ui.Button(label="Return to Dashboard", style=discord.ButtonStyle.secondary)
+        searchprize_btn = discord.ui.Button(label="Search by Prize",
+                                       style=discord.ButtonStyle.primary)
+        searchID_btn = discord.ui.Button(label="Search by ID",
+                                            style=discord.ButtonStyle.primary)
+        exclude_btn = discord.ui.Button(label=f"{'Exclude Global Templates' if 4==4 else 'Include Global Templates'}", style=discord.ButtonStyle.secondary if 4==4 else discord.ButtonStyle.secondary)
 
         row = discord.ui.ActionRow()
 
-        row.add_item(return_btn)
+        row.add_item(searchprize_btn)
+        row.add_item(searchID_btn)
+        row.add_item(exclude_btn)
 
         container.add_item(row)
 
+        sort_dropdown = discord.ui.Select(placeholder=f"placeholder for current mode", options=['Sort by Most Popular', 'Sort by Least Popular', 'Sort by Alphabetical Order', 'Sort by Reversed Alphabetical Order'])
+
+        row = discord.ui.ActionRow()
+        row.add_item(sort_dropdown)
+        container.add_item(row)
+
+
         self.add_item(container)
 
-class EditPage(PrivateLayoutView):
+class CreatewithtemplatePage(PrivateLayoutView):
     def __init__(self):
         super().__init__(timeout=None)
         self.build_layout()
@@ -86,38 +178,54 @@ class EditPage(PrivateLayoutView):
     def build_layout(self):
         self.clear_items()
         container = discord.ui.Container()
-        container.add_item((discord.ui.TextDisplay("Edit: {panel name}")))
+        container.add_item((discord.ui.TextDisplay("## Choose an option below to continue creating with template.")))
         container.add_item(discord.ui.Separator())
-        container.add_item(discord.ui.TextDisplay("**State:** placeholder\n**Emojis:** placeholder\n**Channel:** placeholder\n**Target:** placeholder\n**Mode:** placeholder\n"))
-        container.add_item(discord.ui.Separator())
-        state_btn = discord.ui.Button(label=f"{'Deactivate' if 1==1 else 'Activate'}", style=discord.ButtonStyle.secondary if 1==1 else discord.ButtonStyle.primary)
-        edit_btn = discord.ui.Button(label="Edit", style=discord.ButtonStyle.secondary)
-        channel_btn = discord.ui.Button(label="Edit Channel", style=discord.ButtonStyle.secondary)
-        member_btn = discord.ui.Button(label=f"{'Disable Member Whitelist' if 2==2 else 'Enable Member Whitelist'}", style=discord.ButtonStyle.secondary if 2==2 else discord.ButtonStyle.primary)
-        image_btn = discord.ui.Button(label=f"{'Disable Image-only Mode' if 3==3 else 'Enable Image-only Mode'}", style=discord.ButtonStyle.secondary if 3==3 else discord.ButtonStyle.primary)
-        delete_btn = discord.ui.Button(label="Delete", style=discord.ButtonStyle.danger)
 
+        id_btn = discord.ui.Button(label="Enter Template ID",
+                                       style=discord.ButtonStyle.primary)
+        browse_btn = discord.ui.Button(label="Browse Templates",
+                                       style=discord.ButtonStyle.primary)
+        my_btn = discord.ui.Button(label="My Templates", style=discord.ButtonStyle.secondary)
         row = discord.ui.ActionRow()
 
-        row.add_item(state_btn)
-        row.add_item(edit_btn)
-        row.add_item(channel_btn)
-        row.add_item(delete_btn)
+        row.add_item(id_btn)
+        row.add_item(browse_btn)
+        row.add_item(my_btn)
 
         container.add_item(row)
 
-        row = discord.ui.ActionRow()
+        self.add_item(container)
 
-        row.add_item(member_btn)
-        row.add_item(image_btn)
+class MystuffUse(PrivateLayoutView):
+    def __init__(self):
+        super().__init__(timeout=None)
+        self.build_layout()
 
-        container.add_item(row)
-
+    def build_layout(self):
+        self.clear_items()
+        container = discord.ui.Container()
+        container.add_item((discord.ui.TextDisplay("## My Templates")))
         container.add_item(discord.ui.Separator())
 
-        return_btn = discord.ui.Button(label="Return to Manage Menu", style=discord.ButtonStyle.secondary)
+        use_btn = discord.ui.Button(label="Use", style=discord.ButtonStyle.secondary)
+
+        container.add_item(discord.ui.Section(discord.ui.TextDisplay(
+            "### 1. Prize Name\n**Winners:** placeholder\n**Duration:** placeholder (duration, not end time)\n**Channel:** placeholder\n**Giveaway Host:** placeholder\n**Extra Entries Role:** placeholder\n**Required Roles:** placeholder\n**Required Roles Behaviour:** placeholder\n**Winner Role:** placeholder\n**Blacklisted Roles** placeholder\n**Embed Image:** placeholder for yes (only shown if there is one)\n**Embed Thumbnail:** placeholder for yes (only shown if there is one)\n**Colour:** placeholder (default if default)"),
+                                              accessory=use_btn))
+        container.add_item(discord.ui.TextDisplay("-# Page 1 of 1"))
+        container.add_item(discord.ui.Separator())
+        left_btn = discord.ui.Button(emoji="◀️", style=discord.ButtonStyle.primary,
+                                     disabled=1 == 1)
+        go_btn = discord.ui.Button(label="Go to Page", style=discord.ButtonStyle.secondary,
+                                   disabled=2 == 2)
+        right_btn = discord.ui.Button(emoji="◀▶️", style=discord.ButtonStyle.primary,
+                                      disabled=3 == 3)
         row = discord.ui.ActionRow()
-        row.add_item(return_btn)
+
+        row.add_item(left_btn)
+        row.add_item(go_btn)
+        row.add_item(right_btn)
+
         container.add_item(row)
 
         self.add_item(container)
@@ -155,92 +263,6 @@ class GoToPageModal(discord.ui.Modal):
                 ephemeral=True
             )
 
-class CreateChannelSelect(PrivateLayoutView):
-    def __init__(self, user, cog, guild_id, is_rebind=False, panel_title=None):
-        super().__init__(user, timeout=None)
-        self.cog = cog
-        self.guild_id = guild_id
-        self.is_rebind = is_rebind
-        self.panel_title = panel_title
-        self.build_layout()
-
-    def build_layout(self):
-        container = discord.ui.Container()
-
-        self.select = discord.ui.ChannelSelect(
-            placeholder="Select a channel...",
-            channel_types=[discord.ChannelType.text],
-            min_values=1, max_values=1
-        )
-        self.select.callback = self.select_callback
-
-        row = discord.ui.ActionRow()
-        row.add_item(self.select)
-        container.add_item(discord.ui.TextDisplay("### Step 1: Select a Channel"))
-        container.add_item(discord.ui.TextDisplay("Choose the channel where you want the reactions to be made:"))
-        container.add_item(row)
-        self.add_item(container)
-
-    async def select_callback(self, interaction: discord.Interaction):
-        pass
-
-class EditChannelSelect(PrivateLayoutView):
-    def __init__(self, user, cog, guild_id, is_rebind=False, panel_title=None):
-        super().__init__(user, timeout=None)
-        self.cog = cog
-        self.guild_id = guild_id
-        self.is_rebind = is_rebind
-        self.panel_title = panel_title
-        self.build_layout()
-
-    def build_layout(self):
-        container = discord.ui.Container()
-
-        self.select = discord.ui.ChannelSelect(
-            placeholder="Select a channel...",
-            channel_types=[discord.ChannelType.text],
-            min_values=1, max_values=1
-        )
-        self.select.callback = self.select_callback
-
-        row = discord.ui.ActionRow()
-        row.add_item(self.select)
-        container.add_item(discord.ui.TextDisplay("Select a Channel"))
-        container.add_item(discord.ui.TextDisplay("Choose the channel where you want the reactions to be made:"))
-        container.add_item(row)
-        self.add_item(container)
-
-    async def select_callback(self, interaction: discord.Interaction):
-        pass
-
-class MemberSelect(PrivateLayoutView):
-    def __init__(self, user, cog, guild_id, is_rebind=False, panel_title=None):
-        super().__init__(user, timeout=None)
-        self.cog = cog
-        self.guild_id = guild_id
-        self.is_rebind = is_rebind
-        self.panel_title = panel_title
-        self.build_layout()
-
-    def build_layout(self):
-        container = discord.ui.Container()
-
-        self.select = discord.ui.UserSelect(
-            placeholder="Select members...",
-            min_values=1, max_values=25
-        )
-        self.select.callback = self.select_callback
-
-        row = discord.ui.ActionRow()
-        row.add_item(self.select)
-        container.add_item(discord.ui.TextDisplay("Select Members"))
-        container.add_item(discord.ui.TextDisplay("Choose only the member(s) whose messages should get the reaction:"))
-        container.add_item(row)
-        self.add_item(container)
-
-    async def select_callback(self, interaction: discord.Interaction):
-        pass
-
 
 
 class DestructiveConfirmationView(PrivateLayoutView):
@@ -251,8 +273,8 @@ class DestructiveConfirmationView(PrivateLayoutView):
         self.color = None
         self.guild_id = guild_id
         self.value = None
-        self.title_text = "Delete Autoreact Panel"
-        self.body_text = f"Are you sure you want to permanently delete the panel name **{title_name}**? This cannot be undone."
+        self.title_text = "Delete Giveaway Template"
+        self.body_text = f"Are you sure you want to delete template for [placeholder for prize]? This cannot be undone."
         self.build_layout()
 
     def build_layout(self):
@@ -301,6 +323,64 @@ class DestructiveConfirmationView(PrivateLayoutView):
             self.value = False
             await self.update_view(interaction, "Timed Out", discord.Color(0xdf5046))
 
+class ConfirmationView(PrivateLayoutView):
+    def __init__(self, user, title_name, cog, guild_id):
+        super().__init__(user, timeout=30)
+        self.title_name = title_name
+        self.cog = cog
+        self.color = None
+        self.guild_id = guild_id
+        self.value = None
+        self.title_text = "Publish Giveaway Template"
+        self.body_text = f"Are you sure you want to **globally** publish template for **[placeholder for prize]**? Anyone will be able to search and use your template."
+        self.build_layout()
+
+    def build_layout(self):
+        self.clear_items()
+        container = discord.ui.Container(accent_color=self.color)
+        container.add_item(discord.ui.TextDisplay(f"### {self.title_text}"))
+        container.add_item(discord.ui.Separator())
+        container.add_item(discord.ui.TextDisplay(self.body_text))
+
+        is_disabled = self.value is not None
+        action_row = discord.ui.ActionRow()
+        cancel = discord.ui.Button(label="Cancel", style=discord.ButtonStyle.secondary, disabled=is_disabled)
+        confirm = discord.ui.Button(label="Confirm", style=discord.ButtonStyle.green, disabled=is_disabled)
+
+        cancel.callback = self.cancel_callback
+        confirm.callback = self.confirm_callback
+
+        action_row.add_item(cancel)
+        action_row.add_item(confirm)
+        container.add_item(discord.ui.Separator())
+        container.add_item(action_row)
+
+        self.add_item(container)
+
+    async def update_view(self, interaction: discord.Interaction, title: str, color: discord.Color):
+        self.title_text = title
+        self.body_text = f"~~{self.body_text}~~"
+        self.build_layout()
+        if interaction.response.is_done():
+            await interaction.edit_original_response(view=self)
+        else:
+            await interaction.response.edit_message(view=self)
+        self.stop()
+
+    async def cancel_callback(self, interaction: discord.Interaction):
+        self.value = False
+        await self.update_view(interaction, "Action Canceled", discord.Color(0xdf5046))
+
+    async def confirm_callback(self, interaction: discord.Interaction):
+        self.value = True
+        await self.update_view(interaction, "Action Confirmed", discord.Color.green())
+        await self.cog.delete_panel(self.guild_id, self.title_name)
+
+    async def on_timeout(self, interaction: discord.Interaction):
+        if self.value is None:
+            self.value = False
+            await self.update_view(interaction, "Timed Out", discord.Color(0xdf5046))
+
 
 class CV2TestCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -308,7 +388,7 @@ class CV2TestCog(commands.Cog):
 
     @app_commands.command(name="cv2test", description="Tests Discord Components V2 layout")
     async def cv2test(self, interaction: discord.Interaction):
-        view = EditPage()
+        view = BrowsePage()
         await interaction.response.send_message(
             view=view,
         )
