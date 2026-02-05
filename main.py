@@ -354,7 +354,7 @@ async def on_ready():
 
     await bot.change_presence(
         status=discord.Status.dnd,
-        activity=discord.CustomActivity(name="✨ Testing v3.0.0-alpha!")
+        activity=discord.CustomActivity(name="✨ Testing v3.0.0-beta!")
     )
     bot.start_time = time.time()
 
