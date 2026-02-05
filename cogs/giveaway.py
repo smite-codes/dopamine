@@ -945,8 +945,7 @@ class Giveaways(commands.Cog):
                 winner_role_id = g.get('winner_role_id')
                 if winner_role_id:
                     role = guild.get_role(winner_role_id)
-                    async def chunk_list(self, lst, n):
-                        """Split a list into chunks of size n."""
+                    async def chunk_list(lst, n):
                         for i in range(0, len(lst), n):
                             yield lst[i:i + n]
                     if role:
