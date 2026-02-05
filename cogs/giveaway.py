@@ -1,10 +1,8 @@
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from importlib.machinery import all_suffixes
-from typing import Optional, List, Dict, Set
+from typing import Optional, List, Dict, Set, Any
 import discord
 from discord import app_commands, Interaction
-import re
 from discord.ext import commands, tasks
 import random
 import asyncio
@@ -15,13 +13,21 @@ from discord.ui import TextDisplay
 from config import GDB_PATH
 from utils.time import get_duration_to_seconds, get_now_plus_seconds_unix
 
+ADJECTIVES = ["alpha", "beta", "delta", "sonic", "prime", "global", "pivot", "solid", "static", "linear", "vital", "core", "urban", "nomad"]
+NOUNS = ["node", "link", "point", "base", "grid", "zone", "unit", "flux", "pillar", "vector", "path", "shift", "pulse", "forge"]
+
+
+def generate_template_id():
+    return f"{random.choice(ADJECTIVES)}-{random.choice(NOUNS)}-{random.randint(100, 999)}".lower()
+
+
 @dataclass
 class GiveawayDraft:
     guild_id: int
     channel_id: int
     prize: str
     winners: int
-    end_time: int
+    duration: str
     host_id: Optional[int] = None
     required_roles: List[int] = None
     required_behaviour: int = 0
@@ -31,6 +37,7 @@ class GiveawayDraft:
     image: Optional[str] = None
     thumbnail: Optional[str] = None
     color: str = "discord.Color(0x944ae8)"
+
 
 class PrivateView(discord.ui.View):
     def __init__(self, user, *args, **kwargs):
@@ -46,6 +53,7 @@ class PrivateView(discord.ui.View):
             return False
         return True
 
+
 class PrivateLayoutView(discord.ui.LayoutView):
     def __init__(self, user, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -60,6 +68,7 @@ class PrivateLayoutView(discord.ui.LayoutView):
             return False
         return True
 
+
 class CreateChoose(PrivateLayoutView):
     def __init__(self, cog, user):
         super().__init__(user, timeout=None)
@@ -70,11 +79,13 @@ class CreateChoose(PrivateLayoutView):
         self.clear_items()
         container = discord.ui.Container()
         container.add_item((discord.ui.TextDisplay("## Create Giveaway")))
-        container.add_item(discord.ui.TextDisplay("Choose an option below to continue creating a giveaway. Create button leads to the regular creation menu, while the other option lets you enter a template code."))
+        container.add_item(discord.ui.TextDisplay(
+            "Choose an option below to continue creating a giveaway. Create button leads to the regular creation menu, while the other option lets you enter a template code."))
         container.add_item(discord.ui.Separator())
         create_btn = discord.ui.Button(label="Create", style=discord.ButtonStyle.primary)
         create_btn.callback = self.create_callback
         template_btn = discord.ui.Button(label="Create from Template", style=discord.ButtonStyle.secondary)
+        template_btn.callback = self.template_callback
         row = discord.ui.ActionRow()
 
         row.add_item(create_btn)
@@ -85,20 +96,16 @@ class CreateChoose(PrivateLayoutView):
         self.add_item(container)
 
     async def create_callback(self, interaction: discord.Interaction):
-        seconds = get_duration_to_seconds("24h")
-        end_timestamp = get_now_plus_seconds_unix(seconds)
         draft = GiveawayDraft(
             guild_id=interaction.guild.id,
             channel_id=interaction.channel.id,
             prize="Unspecified Prize",
             winners=1,
-            end_time=end_timestamp
+            duration="24h"
         )
 
         embed = self.cog.create_giveaway_embed(draft)
-
         view = GiveawayPreviewView(self.cog, self.user, draft)
-
         expires = get_now_plus_seconds_unix(900)
 
         await interaction.response.send_message(
@@ -107,6 +114,12 @@ class CreateChoose(PrivateLayoutView):
             view=view,
             ephemeral=False
         )
+        view.message = await interaction.original_response()
+
+    async def template_callback(self, interaction: discord.Interaction):
+        view = CreatewithtemplatePage(self.cog, self.user)
+        await interaction.response.send_message(view=view, ephemeral=True)
+
 
 class GiveawayEditSelect(discord.ui.Select):
     def __init__(self, cog, draft: GiveawayDraft, parent_view):
@@ -115,17 +128,27 @@ class GiveawayEditSelect(discord.ui.Select):
         self.parent_view = parent_view
         options = [
             discord.SelectOption(label="1. Prize", value="prize", description="Change the prize being given away."),
-            discord.SelectOption(label="2. Duration", value="duration", description="Change how long the giveaway lasts (e.g., 1h, 2d)."),
-            discord.SelectOption(label="3. Winners Count", value="winners", description="Change the number of winners."),
-            discord.SelectOption(label="4. Channel", value="channel", description="Change where the giveaway is posted."),
-            discord.SelectOption(label="5. Giveaway Host", value="host", description="The host name to be shown in the giveaway Embed."),
-            discord.SelectOption(label="6. Extra Entries Role", value="extra", description="Roles that will give extra entries. Each role gives +1 entries."),
-            discord.SelectOption(label="7. Required Roles", value="required", description="Roles required to participate."),
-            discord.SelectOption(label="8. Required Roles Behaviour", value="behavior", description="The behavior of the required roles feature."),
+            discord.SelectOption(label="2. Duration", value="duration",
+                                 description="Change how long the giveaway lasts (e.g., 1h, 2d)."),
+            discord.SelectOption(label="3. Winners Count", value="winners",
+                                 description="Change the number of winners."),
+            discord.SelectOption(label="4. Channel", value="channel",
+                                 description="Change where the giveaway is posted."),
+            discord.SelectOption(label="5. Giveaway Host", value="host",
+                                 description="The host name to be shown in the giveaway Embed."),
+            discord.SelectOption(label="6. Extra Entries Role", value="extra",
+                                 description="Roles that will give extra entries. Each role gives +1 entries."),
+            discord.SelectOption(label="7. Required Roles", value="required",
+                                 description="Roles required to participate."),
+            discord.SelectOption(label="8. Required Roles Behaviour", value="behavior",
+                                 description="The behavior of the required roles feature."),
             discord.SelectOption(label="9. Winner Role", value="winner_role", description="Role given to winners."),
-            discord.SelectOption(label="10. Blacklisted Roles", value="blacklist", description="Roles that cannot participate."),
-            discord.SelectOption(label="11. Image", value="image", description="Provide a valid URL for the Embed image."),
-            discord.SelectOption(label="12. Thumbnail", value="thumbnail", description="Provide a valid URL for the Embed thumbnail."),
+            discord.SelectOption(label="10. Blacklisted Roles", value="blacklist",
+                                 description="Roles that cannot participate."),
+            discord.SelectOption(label="11. Image", value="image",
+                                 description="Provide a valid URL for the Embed image."),
+            discord.SelectOption(label="12. Thumbnail", value="thumbnail",
+                                 description="Provide a valid URL for the Embed thumbnail."),
             discord.SelectOption(label="13. Colour", value="color", description="Set embed color (Hex or Valid Name).")
         ]
         super().__init__(placeholder="Select a setting to customize...", options=options)
@@ -187,7 +210,7 @@ class GiveawayMetadataModal(discord.ui.Modal):
         elif trait == "winners":
             current_value = str(self.draft.winners)
         elif trait == "duration":
-            current_value = ""
+            current_value = str(self.draft.duration)
 
         placeholder = "e.g. 1d 12h" if trait == "duration" else "Type here..."
         self.input_field = discord.ui.TextInput(
@@ -208,15 +231,15 @@ class GiveawayMetadataModal(discord.ui.Modal):
                 return await interaction.response.send_message("Winners must be a number!", ephemeral=True)
             self.draft.winners = int(value)
         elif self.trait == "duration":
-            from utils.time import get_duration_to_seconds, get_now_plus_seconds_unix
             seconds = get_duration_to_seconds(value)
             if seconds <= 0:
                 return await interaction.response.send_message("Invalid duration format!", ephemeral=True)
-            self.draft.end_time = get_now_plus_seconds_unix(seconds)
+            self.draft.duration = value
 
         new_embed = self.parent_view.cog.create_giveaway_embed(self.draft)
         await self.parent_view.message.edit(embed=new_embed)
         await interaction.response.send_message(f"Updated **{self.trait}** successfully!", ephemeral=True)
+
 
 class ChannelSelectView(discord.ui.View):
     def __init__(self, draft: GiveawayDraft, parent_view):
@@ -234,7 +257,9 @@ class ChannelSelectView(discord.ui.View):
         self.draft.channel_id = self.select.values[0].id
         new_embed = self.parent_view.cog.create_giveaway_embed(self.draft)
         await self.parent_view.message.edit(embed=new_embed)
-        await interaction.response.send_message(f"Target channel updated to {self.select.values[0].mention}", ephemeral=True)
+        await interaction.response.send_message(f"Target channel updated to {self.select.values[0].mention}",
+                                                ephemeral=True)
+
 
 class GiveawayVisualsModal(discord.ui.Modal):
     def __init__(self, trait: str, draft: GiveawayDraft, parent_view):
@@ -264,7 +289,8 @@ class GiveawayVisualsModal(discord.ui.Modal):
 
         await interaction.response.send_message(f"Updated **{self.trait}** successfully!", ephemeral=True)
 
-class GoToPageModal(discord.ui.Modal):
+
+class GoToPageModalPaginator(discord.ui.Modal):
     def __init__(self, current_page: int, max_pages: int, parent_view):
         super().__init__(title="Go to Page")
         self.parent_view = parent_view
@@ -284,7 +310,8 @@ class GoToPageModal(discord.ui.Modal):
                 self.parent_view.current_page = page_num - 1
                 await interaction.response.edit_message(embed=self.parent_view.get_embed(), view=self.parent_view)
             else:
-                await interaction.response.send_message(f"Please enter a number between 1 and {self.max_pages}.", ephemeral=True)
+                await interaction.response.send_message(f"Please enter a number between 1 and {self.max_pages}.",
+                                                        ephemeral=True)
         except ValueError:
             await interaction.response.send_message("Invalid number entered.", ephemeral=True)
 
@@ -350,7 +377,7 @@ class ParticipantPaginator(discord.ui.View):
     @discord.ui.button(label="Go To Page", style=discord.ButtonStyle.gray)
     async def go_to_page(self, interaction: discord.Interaction, button: discord.ui.Button):
         total_pages = (len(self.processed_participants) - 1) // self.per_page + 1
-        await interaction.response.send_modal(GoToPageModal(self.current_page, total_pages, self))
+        await interaction.response.send_modal(GoToPageModalPaginator(self.current_page, total_pages, self))
 
     @discord.ui.button(label="▶️", style=discord.ButtonStyle.gray)
     async def next_page(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -364,11 +391,14 @@ class ParticipantPaginator(discord.ui.View):
         button.label = "Show Usernames" if self.show_tags else "Show User Tags"
         await interaction.response.edit_message(embed=self.get_embed(), view=self)
 
+
 class BehaviorSelect(discord.ui.Select):
     def __init__(self, draft: GiveawayDraft, parent_view):
         options = [
-            discord.SelectOption(label="All required roles", value="0", description="Participant must have every role listed."),
-            discord.SelectOption(label="One of the required roles", value="1", description="Participant must have at least one role listed.")
+            discord.SelectOption(label="All required roles", value="0",
+                                 description="Participant must have every role listed."),
+            discord.SelectOption(label="One of the required roles", value="1",
+                                 description="Participant must have at least one role listed.")
         ]
 
         super().__init__(placeholder="Choose role requirement behaviour...", options=options)
@@ -380,23 +410,38 @@ class BehaviorSelect(discord.ui.Select):
         await self.parent_view.message.edit(embed=new_embed)
         await interaction.response.send_message("Role requirement behaviour updated successfully!", ephemeral=True)
 
+
 class GiveawayPreviewView(PrivateView):
-    def __init__(self, cog, user, draft: GiveawayDraft):
+    def __init__(self, cog, user, draft: GiveawayDraft, template_mode: bool = False):
         super().__init__(user, timeout=900)
         self.cog = cog
         self.draft = draft
-        self.message = Optional[discord.InteractionMessage]
+        self.message = None
+        self.template_mode = template_mode
+
+        if self.template_mode:
+            self.start_button.label = "Save Template"
+            self.start_button.style = discord.ButtonStyle.blurple
+        else:
+            self.start_button.label = "Start"
+            self.start_button.style = discord.ButtonStyle.green
 
     async def on_timeout(self):
         if self.message:
             try:
-                await self.message.edit(title="Giveaway preview expired", descrption="This giveaway preview has expired.", view=None, colour=discord.Colour.red())
+                await self.message.edit(title="Giveaway preview expired",
+                                        description="This giveaway preview has expired.", view=None,
+                                        colour=discord.Colour.red())
             except discord.HTTPException:
                 pass
 
     @discord.ui.button(label="Start", style=discord.ButtonStyle.green)
     async def start_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
+
+        if self.template_mode:
+            await self.cog.save_template(interaction, self.draft)
+            return
 
         channel = self.cog.bot.get_channel(self.draft.channel_id)
         if not channel:
@@ -408,11 +453,17 @@ class GiveawayPreviewView(PrivateView):
                     ephemeral=True)
 
         giveaway_id = int(discord.utils.utcnow().timestamp()) + random.randint(1, 69)
+
+        seconds = get_duration_to_seconds(self.draft.duration)
+        end_time = get_now_plus_seconds_unix(seconds)
+
         view = GiveawayJoinView(self.cog, giveaway_id)
-        embed = self.cog.create_giveaway_embed(self.draft)
+
+        embed = self.cog.create_giveaway_embed(self.draft, preview_active_end=end_time)
         embed.set_footer(text=f"ID: {giveaway_id}")
         msg = await channel.send(embed=embed, view=view)
-        await self.cog.save_giveaway(self.draft, msg.id, giveaway_id)
+
+        await self.cog.save_giveaway(self.draft, msg.id, giveaway_id, end_time)
         self.cog.bot.add_view(view)
         success_embed = discord.Embed(description=f"Giveaway started successfully in {channel.mention}!",
                                       colour=discord.Colour.green())
@@ -429,7 +480,8 @@ class GiveawayPreviewView(PrivateView):
         view.add_item(select)
 
         await interaction.response.send_message(
-            embed=discord.Embed(title="Edit Giveaway", description="Select a setting...", color=discord.Color(0x8632e6)),
+            embed=discord.Embed(title="Edit Giveaway", description="Select a setting...",
+                                color=discord.Color(0x8632e6)),
             view=view,
             ephemeral=True
         )
@@ -439,6 +491,7 @@ class GiveawayPreviewView(PrivateView):
     async def cancel_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.edit_message(embed=discord.Embed(title="Giveaway Creation Cancelled."), view=None)
         self.stop()
+
 
 class MemberSelectView(discord.ui.View):
     def __init__(self, draft: GiveawayDraft, parent_view):
@@ -453,7 +506,8 @@ class MemberSelectView(discord.ui.View):
         self.draft.host_id = self.select.values[0].id
         new_embed = self.parent_view.cog.create_giveaway_embed(self.draft)
         await self.parent_view.message.edit(embed=new_embed)
-        await interaction.response.send_message(f"Giveaway host updated to {self.select.values[0].mention}", ephemeral=True)
+        await interaction.response.send_message(f"Giveaway host updated to {self.select.values[0].mention}",
+                                                ephemeral=True)
 
 
 class RoleSelectView(discord.ui.View):
@@ -508,7 +562,6 @@ class WinnerRoleSelectView(discord.ui.View):
         await interaction.response.send_message(f"Updated {self.key} successfully!", ephemeral=True)
 
 
-
 class GiveawayJoinView(discord.ui.View):
     def __init__(self, cog, giveaway_id: int):
         super().__init__(timeout=None)
@@ -530,23 +583,27 @@ class GiveawayJoinView(discord.ui.View):
     )
     async def join_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not interaction.message.embeds:
-            return await interaction.response.send_message("Uh-oh! I'm afraid that the message you interacted with doesn't exist anymore :3", ephemeral=True)
+            return await interaction.response.send_message(
+                "Uh-oh! I'm afraid that the message you interacted with doesn't exist anymore :3", ephemeral=True)
 
         footer_text = interaction.message.embeds[0].footer.text
         try:
             giveaway_id = int(footer_text.split(": ")[1])
         except (IndexError, ValueError):
-            return await interaction.response.send_message("Uh-oh! I couldn't find the Giveaway ID. Perhaps try again?", ephemeral=True)
+            return await interaction.response.send_message("Uh-oh! I couldn't find the Giveaway ID. Perhaps try again?",
+                                                           ephemeral=True)
 
         g = self.cog.giveaway_cache.get(giveaway_id)
 
         if not g or g['ended'] == 1:
-            return await interaction.response.send_message("Uh-oh! I'm afraid that this giveaway has already ended!", ephemeral=True)
+            return await interaction.response.send_message("Uh-oh! I'm afraid that this giveaway has already ended!",
+                                                           ephemeral=True)
 
         if g['blacklisted_roles']:
             blacklisted_ids = [int(r) for r in g['blacklisted_roles'].split(",")]
             if any(role.id in blacklisted_ids for role in interaction.user.roles):
-                return await interaction.response.send_message("Uh-oh! You cannot join this giveaway because you have a blacklisted role.", ephemeral=True)
+                return await interaction.response.send_message(
+                    "Uh-oh! You cannot join this giveaway because you have a blacklisted role.", ephemeral=True)
 
         if g['required_roles']:
             req_ids = [int(r) for r in g['required_roles'].split(",")]
@@ -554,11 +611,15 @@ class GiveawayJoinView(discord.ui.View):
 
             if g['req_behaviour'] == 0:
                 if not all(r in user_role_ids for r in req_ids):
-                    return await interaction.response.send_message("Uh-oh! You cannot join this giveaway because you don't have all the required roles.", ephemeral=True)
+                    return await interaction.response.send_message(
+                        "Uh-oh! You cannot join this giveaway because you don't have all the required roles.",
+                        ephemeral=True)
 
             else:
                 if not any(r in user_role_ids for r in req_ids):
-                    return await interaction.response.send_message("Uh-oh! You cannot join this giveaway because you don't have one of the required roles.", ephemeral=True)
+                    return await interaction.response.send_message(
+                        "Uh-oh! You cannot join this giveaway because you don't have one of the required roles.",
+                        ephemeral=True)
 
         participants = self.cog.participant_cache.get(giveaway_id, set())
 
@@ -589,14 +650,16 @@ class GiveawayJoinView(discord.ui.View):
     )
     async def list_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not interaction.message.embeds:
-            return await interaction.response.send_message("Uh-oh! I'm afraid that the message you interacted with doesn't exist anymore :3", ephemeral=True)
+            return await interaction.response.send_message(
+                "Uh-oh! I'm afraid that the message you interacted with doesn't exist anymore :3", ephemeral=True)
 
         footer_text = interaction.message.embeds[0].footer.text
 
         try:
             giveaway_id = int(footer_text.split(": ")[1])
         except (IndexError, ValueError):
-            return await interaction.response.send_message("Uh-oh! I couldn't parse Giveaway ID. Maybe try again?", ephemeral=True)
+            return await interaction.response.send_message("Uh-oh! I couldn't parse Giveaway ID. Maybe try again?",
+                                                           ephemeral=True)
 
         participant_set = self.cog.participant_cache.get(giveaway_id, set())
         participants = list(participant_set)
@@ -611,17 +674,585 @@ class GiveawayJoinView(discord.ui.View):
         if not participants:
             return await interaction.response.send_message("There are currently no participants in this giveaway!",
                                                            ephemeral=True)
-        view = ParticipantPaginator(bot=self.cog.bot, participants=participants, prize=prize, extra_roles=extra_roles_list, guild=interaction.guild)
+        view = ParticipantPaginator(bot=self.cog.bot, participants=participants, prize=prize,
+                                    extra_roles=extra_roles_list, guild=interaction.guild)
         await interaction.response.send_message(embed=view.get_embed(), view=view, ephemeral=True)
 
+
+class TemplateHomepage(PrivateLayoutView):
+    def __init__(self, cog, user):
+        super().__init__(user, timeout=None)
+        self.cog = cog
+        self.build_layout()
+
+    def build_layout(self):
+        self.clear_items()
+        container = discord.ui.Container()
+        container.add_item((discord.ui.TextDisplay("## Giveaway Templates")))
+        container.add_item(discord.ui.TextDisplay(
+            "Giveaway Templates allow you to quicky start a giveaway without needing to manually make one from scratch. To create a new template, go to My Stuff. To browse through the list of user-created templates, click on Browse Templates."))
+        container.add_item(discord.ui.Separator())
+
+        repo_btn = discord.ui.Button(label="Browse Templates", style=discord.ButtonStyle.primary)
+        repo_btn.callback = self.browse_callback
+        my_btn = discord.ui.Button(label="My Stuff", style=discord.ButtonStyle.secondary)
+        my_btn.callback = self.mystuff_callback
+        row = discord.ui.ActionRow()
+
+        row.add_item(repo_btn)
+        row.add_item(my_btn)
+
+        container.add_item(row)
+
+        self.add_item(container)
+
+    async def browse_callback(self, interaction: discord.Interaction):
+        templates = await self.cog.fetch_templates(guild_id=interaction.guild.id, mode="browse")
+        view = BrowsePage(self.cog, self.user, templates, interaction.guild.id)
+        await interaction.response.send_message(view=view, ephemeral=True)
+
+    async def mystuff_callback(self, interaction: discord.Interaction):
+        templates = await self.cog.fetch_templates(user_id=self.user.id, mode="mine")
+        view = MystuffPage(self.cog, self.user, templates)
+        await interaction.response.send_message(view=view, ephemeral=True)
+
+
+class MystuffPage(PrivateLayoutView):
+    def __init__(self, cog, user, templates, page=1):
+        super().__init__(user, timeout=None)
+        self.cog = cog
+        self.templates = templates
+        self.page = page
+        self.per_page = 5
+        self.total_pages = (len(self.templates) - 1) // self.per_page + 1 if self.templates else 1
+        self.build_layout()
+
+    def build_layout(self):
+        self.clear_items()
+        container = discord.ui.Container()
+        container.add_item((discord.ui.TextDisplay("## My Stuff")))
+        container.add_item(
+            discord.ui.TextDisplay("Manage all your templates here. Publish a template, edit it, or create a new one."))
+        container.add_item(discord.ui.Separator())
+
+        start = (self.page - 1) * self.per_page
+        end = start + self.per_page
+        current_templates = self.templates[start:end]
+
+        if not current_templates:
+            container.add_item(discord.ui.TextDisplay("You haven't created any templates yet."))
+
+        for t in current_templates:
+            edit_btn = discord.ui.Button(label="Edit", style=discord.ButtonStyle.secondary,
+                                         custom_id=f"edit:{t['template_id']}")
+            edit_btn.callback = self.create_edit_callback(t)
+
+            desc = f"**Winners:** {t['winners']}\n**Duration:** {t['duration']}\n"
+            if t['channel_id']: desc += f"**Channel:** <#{t['channel_id']}>\n"
+            if t['host_id']: desc += f"**Giveaway Host:** <@{t['host_id']}>\n"
+            if t[
+                'extra_entries']: desc += f"**Extra Entries Role:** {t['extra_entries']}\n"
+            if t['required_roles']:
+                desc += f"**Required Roles:** {t['required_roles']}\n"
+                if t['req_behaviour'] is not None:
+                    desc += f"**Required Roles Behaviour:** Must have **all** of the listed roles\n"
+                else:
+                    desc += f"**Required Roles Behaviour:** Must have **one** of the listed roles\n"
+            if t['winner_role_id']: desc += f"**Winner Role:** <@&{t['winner_role_id']}>\n"
+            if t['blacklisted_roles']: desc += f"**Blacklisted Roles** {t['blacklisted_roles']}\n"
+            if t['image']: desc += "**Embed Image:** Yes\n"
+            if t['thumbnail']: desc += "**Embed Thumbnail:** Yes\n"
+            if t['color']:
+                if t['color'] == "discord.Color(0x944ae8)":
+                    desc += f"**Colour:** Default"
+                else:
+                    desc += f"**Colour:** {t['color']}"
+
+            container.add_item(discord.ui.Section(discord.ui.TextDisplay(
+                f"### {t['prize']}\n{desc}"), accessory=edit_btn))
+
+        container.add_item(discord.ui.TextDisplay(f"-# Page {self.page} of {self.total_pages}"))
+        container.add_item(discord.ui.Separator())
+
+        left_btn = discord.ui.Button(emoji="◀️", style=discord.ButtonStyle.primary, disabled=self.page == 1)
+        left_btn.callback = self.prev_callback
+
+        go_btn = discord.ui.Button(label="Go to Page", style=discord.ButtonStyle.secondary,
+                                   disabled=self.total_pages <= 1)
+        go_btn.callback = self.goto_callback
+
+        right_btn = discord.ui.Button(emoji="▶️", style=discord.ButtonStyle.primary,
+                                      disabled=self.page == self.total_pages)
+        right_btn.callback = self.next_callback
+
+        row = discord.ui.ActionRow()
+        row.add_item(left_btn)
+        row.add_item(go_btn)
+        row.add_item(right_btn)
+        container.add_item(row)
+
+        container.add_item(discord.ui.Separator())
+        create_btn = discord.ui.Button(label="Create New Template", style=discord.ButtonStyle.primary)
+        create_btn.callback = self.create_new_callback
+        row = discord.ui.ActionRow()
+        row.add_item(create_btn)
+        container.add_item(row)
+
+        self.add_item(container)
+
+    def create_edit_callback(self, template_data):
+        async def callback(interaction: discord.Interaction):
+            view = EditPage(self.cog, self.user, template_data)
+            await interaction.response.send_message(view=view, ephemeral=True)
+
+        return callback
+
+    async def prev_callback(self, interaction: discord.Interaction):
+        self.page -= 1
+        self.build_layout()
+        await interaction.response.edit_message(view=self)
+
+    async def next_callback(self, interaction: discord.Interaction):
+        self.page += 1
+        self.build_layout()
+        await interaction.response.edit_message(view=self)
+
+    async def goto_callback(self, interaction: discord.Interaction):
+        await interaction.response.send_modal(GoToPageModal(self, self.total_pages))
+
+    async def create_new_callback(self, interaction: discord.Interaction):
+        draft = GiveawayDraft(
+            guild_id=interaction.guild.id,
+            channel_id=interaction.channel.id,
+            prize="Template Prize",
+            winners=1,
+            duration="24h"
+        )
+        embed = self.cog.create_giveaway_embed(draft)
+        view = GiveawayPreviewView(self.cog, self.user, draft, template_mode=True)
+        await interaction.response.send_message(embed=embed, view=view)
+
+
+class EditPage(PrivateLayoutView):
+    def __init__(self, cog, user, template_data):
+        super().__init__(user, timeout=None)
+        self.cog = cog
+        self.data = template_data
+        self.build_layout()
+
+    def build_layout(self):
+        self.clear_items()
+        container = discord.ui.Container()
+        container.add_item((discord.ui.TextDisplay(f"## Edit: {self.data['prize']}")))
+        container.add_item(discord.ui.Separator())
+
+        t = self.data
+        desc = f"**Winners:** {t['winners']}\n**Duration:** {t['duration']}\n"
+        if t['channel_id']: desc += f"**Channel:** <#{t['channel_id']}>\n"
+        if t['host_id']: desc += f"**Giveaway Host:** <@{t['host_id']}>\n"
+        if t['extra_entries']: desc += f"**Extra Entries Role:** {t['extra_entries']}\n"
+        if t['required_roles']: desc += f"**Required Roles:** {t['required_roles']}\n"
+        if t['req_behaviour'] is not None: desc += f"**Required Roles Behaviour:** {t['req_behaviour']}\n"
+        if t['winner_role_id']: desc += f"**Winner Role:** <@&{t['winner_role_id']}>\n"
+        if t['blacklisted_roles']: desc += f"**Blacklisted Roles** {t['blacklisted_roles']}\n"
+        if t['image']: desc += "**Embed Image:** Yes\n"
+        if t['thumbnail']: desc += "**Embed Thumbnail:** Yes\n"
+        if t['color']: desc += f"**Colour:** {t['color']}"
+
+        container.add_item(discord.ui.TextDisplay(desc))
+
+        container.add_item(discord.ui.Separator())
+        edit_btn = discord.ui.Button(label="Edit", style=discord.ButtonStyle.secondary)
+        edit_btn.callback = self.edit_callback
+
+        is_pub = self.data['is_published'] == 1
+        publish_btn = discord.ui.Button(label="Unpublish" if is_pub else "Publish",
+                                        style=discord.ButtonStyle.secondary if is_pub else discord.ButtonStyle.primary)
+        publish_btn.callback = self.publish_callback
+
+        delete_btn = discord.ui.Button(label="Delete", style=discord.ButtonStyle.danger)
+        delete_btn.callback = self.delete_callback
+
+        row = discord.ui.ActionRow()
+        row.add_item(publish_btn)
+        row.add_item(edit_btn)
+        row.add_item(delete_btn)
+
+        container.add_item(row)
+        self.add_item(container)
+
+    async def edit_callback(self, interaction: discord.Interaction):
+        draft = self.cog.template_to_draft(self.data, interaction.guild.id)
+        view = GiveawayPreviewView(self.cog, self.user, draft, template_mode=True)
+        draft.template_id = self.data['template_id']
+
+        embed = self.cog.create_giveaway_embed(draft)
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+    async def publish_callback(self, interaction: discord.Interaction):
+        if self.data['is_published'] == 1:
+            await self.cog.set_publish_status(self.data['template_id'], False, interaction)
+        else:
+            view = ConfirmationView(self.user, self.data['template_id'], self.cog, self.data['creation_guild_id'],
+                                    self.data['prize'])
+            await interaction.response.send_message(view=view, ephemeral=True)
+
+    async def delete_callback(self, interaction: discord.Interaction):
+        view = DestructiveConfirmationView(self.user, self.data['template_id'], self.cog, self.data['creation_guild_id'],
+                                           self.data['prize'])
+        await interaction.response.send_message(view=view, ephemeral=True)
+
+
+class BrowsePage(PrivateLayoutView):
+    def __init__(self, cog, user, templates, guild_id, page=1, exclude_global=False):
+        super().__init__(user, timeout=None)
+        self.cog = cog
+        self.user = user
+        self.templates = templates
+        self.guild_id = guild_id
+        self.page = page
+        self.exclude_global = exclude_global
+        self.per_page = 5
+        self.filter_templates()
+        self.total_pages = (len(self.filtered_templates) - 1) // self.per_page + 1 if self.filtered_templates else 1
+        self.build_layout()
+
+    def filter_templates(self):
+        self.filtered_templates = []
+        if self.exclude_global:
+            self.filtered_templates = [t for t in self.templates if t['creation_guild_id'] == self.guild_id]
+        else:
+            self.filtered_templates = self.templates
+
+    def build_layout(self):
+        self.clear_items()
+        container = discord.ui.Container()
+        count_text = f"{len(self.filtered_templates)} Total Templates"
+        if self.exclude_global:
+            count_text = f"{len(self.filtered_templates)} (Local Only)"
+
+        container.add_item((discord.ui.TextDisplay(f"## Browse — {count_text}")))
+        container.add_item(discord.ui.TextDisplay(
+            "Browse Giveaway templates here. Use the buttons and dropdowns below to search, or sort."))
+        container.add_item(discord.ui.Separator())
+
+        start = (self.page - 1) * self.per_page
+        end = start + self.per_page
+        current = self.filtered_templates[start:end]
+
+        if not current:
+            container.add_item(discord.ui.TextDisplay("No templates found."))
+
+        for t in current:
+            use_btn = discord.ui.Button(label="Use", style=discord.ButtonStyle.primary,
+                                        custom_id=f"use:{t['template_id']}")
+            use_btn.callback = self.create_use_callback(t)
+
+            is_local = t['creation_guild_id'] == self.guild_id
+
+            if not is_local:
+                desc = f"**Template ID:** {t['template_id']}\n**Winners:** {t['winners']}\n**Duration:** {t['duration']}\n"
+                if t['image']: desc += "**Embed Image:** Yes\n"
+                if t['thumbnail']: desc += "**Embed Thumbnail:** Yes\n"
+                if t['color']: desc += f"**Colour:** {t['color']}"
+                title = f"### {t['prize']} (Created by: {t['creator_name']} in {t['guild_name']}) - {t['usage_count']} uses"
+            else:
+                desc = f"**Template ID:** {t['template_id']}\n**Winners:** {t['winners']}\n**Duration:** {t['duration']}\n"
+                if t['channel_id']: desc += f"**Channel:** <#{t['channel_id']}>\n"
+                if t['host_id']: desc += f"**Giveaway Host:** <@{t['host_id']}>\n"
+                if t['color']:
+                    if t['color'] == "discord.Color(0x944ae8)":
+                        desc += f"**Colour:** Default"
+                    else:
+                        desc += f"**Colour:** {t['color']}"
+                title = f"### {t['prize']} (Created by: {t['creator_name']} in {t['guild_name']})"
+
+            container.add_item(discord.ui.Section(discord.ui.TextDisplay(f"{title}\n{desc}"), accessory=use_btn))
+
+        container.add_item(discord.ui.TextDisplay(f"-# Page {self.page} of {self.total_pages}"))
+        container.add_item(discord.ui.Separator())
+
+        left_btn = discord.ui.Button(emoji="◀️", style=discord.ButtonStyle.primary, disabled=self.page == 1)
+        left_btn.callback = self.prev_callback
+        go_btn = discord.ui.Button(label="Go to Page", style=discord.ButtonStyle.secondary,
+                                   disabled=self.total_pages <= 1)
+        go_btn.callback = self.goto_callback
+        right_btn = discord.ui.Button(emoji="▶️", style=discord.ButtonStyle.primary,
+                                      disabled=self.page == self.total_pages)
+        right_btn.callback = self.next_callback
+
+        row = discord.ui.ActionRow()
+        row.add_item(left_btn)
+        row.add_item(go_btn)
+        row.add_item(right_btn)
+        container.add_item(row)
+        container.add_item(discord.ui.Separator())
+
+        searchprize_btn = discord.ui.Button(label="Search by Prize", style=discord.ButtonStyle.primary)
+        searchprize_btn.callback = self.search_prize_callback
+        searchID_btn = discord.ui.Button(label="Search by ID", style=discord.ButtonStyle.primary)
+        searchID_btn.callback = self.search_id_callback
+
+        exclude_label = "Include Global Templates" if self.exclude_global else "Exclude Global Templates"
+        exclude_btn = discord.ui.Button(label=exclude_label, style=discord.ButtonStyle.secondary)
+        exclude_btn.callback = self.exclude_callback
+
+        row = discord.ui.ActionRow()
+        row.add_item(searchprize_btn)
+        row.add_item(searchID_btn)
+        row.add_item(exclude_btn)
+        container.add_item(row)
+
+        sort_dropdown = discord.ui.Select(placeholder="Sort by...", options=[
+            discord.SelectOption(label='Sort by Most Popular', value='popular'),
+            discord.SelectOption(label='Sort by Least Popular', value='unpopular'),
+            discord.SelectOption(label='Sort by Alphabetical Order', value='alpha'),
+            discord.SelectOption(label='Sort by Reversed Alphabetical Order', value='revalpha')
+        ])
+        sort_dropdown.callback = self.sort_callback
+
+        row = discord.ui.ActionRow()
+        row.add_item(sort_dropdown)
+        container.add_item(row)
+
+        self.add_item(container)
+
+    def create_use_callback(self, t):
+        async def callback(interaction: discord.Interaction):
+            draft = self.cog.template_to_draft(t, interaction.guild.id)
+            embed = self.cog.create_giveaway_embed(draft)
+            view = GiveawayPreviewView(self.cog, self.user, draft)
+            await interaction.response.send_message(content="Loaded template!", embed=embed, view=view)
+            await self.cog.increment_usage(t['template_id'])
+
+        return callback
+
+    async def prev_callback(self, interaction: discord.Interaction):
+        self.page -= 1
+        self.build_layout()
+        await interaction.response.edit_message(view=self)
+
+    async def next_callback(self, interaction: discord.Interaction):
+        self.page += 1
+        self.build_layout()
+        await interaction.response.edit_message(view=self)
+
+    async def goto_callback(self, interaction: discord.Interaction):
+        await interaction.response.send_modal(GoToPageModal(self, self.total_pages))
+
+    async def exclude_callback(self, interaction: discord.Interaction):
+        self.exclude_global = not self.exclude_global
+        self.page = 1
+        self.filter_templates()
+        self.total_pages = (len(self.filtered_templates) - 1) // self.per_page + 1 if self.filtered_templates else 1
+        self.build_layout()
+        await interaction.response.edit_message(view=self)
+
+    async def sort_callback(self, interaction: discord.Interaction):
+        val = interaction.data['values'][0]
+        if val == 'popular':
+            self.templates.sort(key=lambda x: x['usage_count'], reverse=True)
+        elif val == 'unpopular':
+            self.templates.sort(key=lambda x: x['usage_count'])
+        elif val == 'alpha':
+            self.templates.sort(key=lambda x: x['prize'].lower())
+        elif val == 'revalpha':
+            self.templates.sort(key=lambda x: x['prize'].lower(), reverse=True)
+
+        self.page = 1
+        self.filter_templates()
+        self.build_layout()
+        await interaction.response.edit_message(view=self)
+
+    async def search_prize_callback(self, interaction: discord.Interaction):
+        await interaction.response.send_modal(SearchModal("prize", self))
+
+    async def search_id_callback(self, interaction: discord.Interaction):
+        await interaction.response.send_modal(SearchModal("id", self))
+
+
+class SearchModal(discord.ui.Modal):
+    def __init__(self, mode, parent_view):
+        super().__init__(title=f"Search by {mode.title()}")
+        self.mode = mode
+        self.parent_view = parent_view
+        self.input = discord.ui.TextInput(label="Query", required=True)
+        self.add_item(self.input)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        query = self.input.value.lower()
+        if self.mode == "prize":
+            self.parent_view.filtered_templates = [t for t in self.parent_view.templates if query in t['prize'].lower()]
+        else:
+            self.parent_view.filtered_templates = [t for t in self.parent_view.templates if
+                                                   query in t['template_id'].lower()]
+
+        self.parent_view.page = 1
+        self.parent_view.total_pages = (
+                                                   len(self.parent_view.filtered_templates) - 1) // self.parent_view.per_page + 1 if self.parent_view.filtered_templates else 1
+        self.parent_view.build_layout()
+        await interaction.response.edit_message(view=self.parent_view)
+
+
+class CreatewithtemplatePage(PrivateLayoutView):
+    def __init__(self, cog, user):
+        super().__init__(user, timeout=None)
+        self.cog = cog
+        self.user = user
+        self.build_layout()
+
+    def build_layout(self):
+        self.clear_items()
+        container = discord.ui.Container()
+        container.add_item((discord.ui.TextDisplay("## Choose an option below to continue creating with template.")))
+        container.add_item(discord.ui.Separator())
+
+        id_btn = discord.ui.Button(label="Enter Template ID", style=discord.ButtonStyle.primary)
+        id_btn.callback = self.enter_id_callback
+        browse_btn = discord.ui.Button(label="Browse Templates", style=discord.ButtonStyle.primary)
+        browse_btn.callback = self.browse_callback
+        my_btn = discord.ui.Button(label="My Templates", style=discord.ButtonStyle.secondary)
+        my_btn.callback = self.my_callback
+        row = discord.ui.ActionRow()
+
+        row.add_item(id_btn)
+        row.add_item(browse_btn)
+        row.add_item(my_btn)
+
+        container.add_item(row)
+
+        self.add_item(container)
+
+    async def enter_id_callback(self, interaction: discord.Interaction):
+        await interaction.response.send_modal(
+            SearchModal("id_direct", self))
+
+    async def browse_callback(self, interaction: discord.Interaction):
+        templates = await self.cog.fetch_templates(guild_id=interaction.guild.id, mode="browse")
+        view = BrowsePage(self.cog, self.user, templates, interaction.guild.id)
+        await interaction.response.send_message(view=view, ephemeral=True)
+
+    async def my_callback(self, interaction: discord.Interaction):
+        templates = await self.cog.fetch_templates(user_id=self.user.id, mode="mine")
+        view = MystuffUse(self.cog, self.user, templates)
+        await interaction.response.send_message(view=view, ephemeral=True)
+
+
+class MystuffUse(PrivateLayoutView):
+    def __init__(self, cog, user, templates, page=1):
+        super().__init__(user, timeout=None)
+        self.cog = cog
+        self.user = user
+        self.templates = templates
+        self.page = page
+        self.per_page = 5
+        self.total_pages = (len(self.templates) - 1) // self.per_page + 1 if self.templates else 1
+        self.build_layout()
+
+    def build_layout(self):
+        self.clear_items()
+        container = discord.ui.Container()
+        container.add_item((discord.ui.TextDisplay("## My Templates")))
+        container.add_item(discord.ui.Separator())
+
+        start = (self.page - 1) * self.per_page
+        end = start + self.per_page
+        current = self.templates[start:end]
+
+        for t in current:
+            use_btn = discord.ui.Button(label="Use", style=discord.ButtonStyle.secondary)
+            use_btn.callback = self.create_use_callback(t)
+
+            desc = f"**Winners:** {t['winners']}\n**Duration:** {t['duration']}\n"
+            container.add_item(
+                discord.ui.Section(discord.ui.TextDisplay(f"### {t['prize']}\n{desc}"), accessory=use_btn))
+
+        container.add_item(discord.ui.TextDisplay(f"-# Page {self.page} of {self.total_pages}"))
+        container.add_item(discord.ui.Separator())
+
+        left_btn = discord.ui.Button(emoji="◀️", style=discord.ButtonStyle.primary, disabled=self.page == 1)
+        left_btn.callback = self.prev_callback
+        go_btn = discord.ui.Button(label="Go to Page", style=discord.ButtonStyle.secondary,
+                                   disabled=self.total_pages <= 1)
+        go_btn.callback = self.goto_callback
+        right_btn = discord.ui.Button(emoji="▶️", style=discord.ButtonStyle.primary,
+                                      disabled=self.page == self.total_pages)
+        right_btn.callback = self.next_callback
+
+        row = discord.ui.ActionRow()
+        row.add_item(left_btn)
+        row.add_item(go_btn)
+        row.add_item(right_btn)
+        container.add_item(row)
+        self.add_item(container)
+
+    def create_use_callback(self, t):
+        async def callback(interaction: discord.Interaction):
+            draft = self.cog.template_to_draft(t, interaction.guild.id)
+            embed = self.cog.create_giveaway_embed(draft)
+            view = GiveawayPreviewView(self.cog, self.user, draft)
+            await interaction.response.send_message(content="Loaded template!", embed=embed, view=view, ephemeral=True)
+
+        return callback
+
+    async def prev_callback(self, interaction: discord.Interaction):
+        self.page -= 1
+        self.build_layout()
+        await interaction.response.edit_message(view=self)
+
+    async def next_callback(self, interaction: discord.Interaction):
+        self.page += 1
+        self.build_layout()
+        await interaction.response.edit_message(view=self)
+
+    async def goto_callback(self, interaction: discord.Interaction):
+        await interaction.response.send_modal(GoToPageModal(self, self.total_pages))
+
+
+class GoToPageModal(discord.ui.Modal):
+    def __init__(self, parent_view, total_pages: int):
+        super().__init__(title="Jump to Page")
+        self.parent_view = parent_view
+        self.total_pages = total_pages
+
+        self.page_input = discord.ui.TextInput(
+            label=f"Page Number (1-{total_pages})",
+            placeholder="Enter a page number...",
+            min_length=1,
+            max_length=5,
+            required=True,
+        )
+        self.add_item(self.page_input)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            page_num = int(self.page_input.value)
+            if 1 <= page_num <= self.total_pages:
+                self.parent_view.page = page_num
+                self.parent_view.build_layout()
+                await interaction.response.edit_message(view=self.parent_view)
+            else:
+                await interaction.response.send_message(
+                    f"Please enter a number between 1 and {self.total_pages}.",
+                    ephemeral=True
+                )
+        except ValueError:
+            await interaction.response.send_message(
+                "Invalid input. Please enter a valid whole number.",
+                ephemeral=True
+            )
+
+
 class DestructiveConfirmationView(PrivateLayoutView):
-    def __init__(self, title_text: str, body_text: str, color: discord.Color = None):
-        super().__init__(timeout=30)
+    def __init__(self, user, template_id, cog, guild_id, prize_name):
+        super().__init__(user, timeout=30)
+        self.template_id = template_id
+        self.cog = cog
+        self.guild_id = guild_id
+        self.color = None
         self.value = None
-        self.title_text = title_text
-        self.body_text = body_text
-        self.color = color
-        self.message: discord.Message = None
+        self.title_text = "Delete Giveaway Template"
+        self.body_text = f"Are you sure you want to delete template for **{prize_name}**? This cannot be undone."
         self.build_layout()
 
     def build_layout(self):
@@ -651,7 +1282,151 @@ class DestructiveConfirmationView(PrivateLayoutView):
         self.body_text = f"~~{self.body_text}~~"
         self.color = color
         self.build_layout()
+        if interaction.response.is_done():
+            await interaction.edit_original_response(view=self)
+        else:
+            await interaction.response.edit_message(view=self)
+        self.stop()
 
+    async def cancel_callback(self, interaction: discord.Interaction):
+        self.value = False
+        await self.update_view(interaction, "Action Canceled", discord.Color(0xdf5046))
+
+    async def confirm_callback(self, interaction: discord.Interaction):
+        self.value = True
+        await self.update_view(interaction, "Action Confirmed", discord.Color.green())
+        await self.cog.delete_template(self.template_id)
+
+    async def on_timeout(self, interaction: discord.Interaction):
+        if self.value is None:
+            self.value = False
+            await self.update_view(interaction, "Timed Out", discord.Color(0xdf5046))
+
+
+class ConfirmationView(PrivateLayoutView):
+    def __init__(self, user, template_id, cog, guild_id, prize_name):
+        super().__init__(user, timeout=30)
+        self.template_id = template_id
+        self.cog = cog
+        self.guild_id = guild_id
+        self.color = None
+        self.value = None
+        self.title_text = "Publish Giveaway Template"
+        self.body_text = f"Are you sure you want to **globally** publish template for **{prize_name}**? Anyone will be able to search and use your template."
+        self.build_layout()
+
+    def build_layout(self):
+        self.clear_items()
+        container = discord.ui.Container(accent_color=self.color)
+        container.add_item(discord.ui.TextDisplay(f"### {self.title_text}"))
+        container.add_item(discord.ui.Separator())
+        container.add_item(discord.ui.TextDisplay(self.body_text))
+
+        is_disabled = self.value is not None
+        action_row = discord.ui.ActionRow()
+        cancel = discord.ui.Button(label="Cancel", style=discord.ButtonStyle.secondary, disabled=is_disabled)
+        confirm = discord.ui.Button(label="Confirm", style=discord.ButtonStyle.green, disabled=is_disabled)
+
+        cancel.callback = self.cancel_callback
+        confirm.callback = self.confirm_callback
+
+        action_row.add_item(cancel)
+        action_row.add_item(confirm)
+        container.add_item(discord.ui.Separator())
+        container.add_item(action_row)
+
+        self.add_item(container)
+
+    async def update_view(self, interaction: discord.Interaction, title: str, color: discord.Color):
+        self.title_text = title
+        self.body_text = f"~~{self.body_text}~~"
+        self.color = color
+        self.build_layout()
+        if interaction.response.is_done():
+            await interaction.edit_original_response(view=self)
+        else:
+            await interaction.response.edit_message(view=self)
+        self.stop()
+
+    async def cancel_callback(self, interaction: discord.Interaction):
+        self.value = False
+        await self.update_view(interaction, "Action Canceled", discord.Color(0xdf5046))
+
+    async def confirm_callback(self, interaction: discord.Interaction):
+        self.value = True
+        await self.update_view(interaction, "Action Confirmed", discord.Color.green())
+        await self.cog.set_publish_status(self.template_id, True, interaction)
+        await interaction.followup.send("To protect the template repository from malicious actors, your template is being reviewed before it will be published. You will recieve a response DM from Dopamine within **24 hours**.")
+
+    async def on_timeout(self, interaction: discord.Interaction):
+        if self.value is None:
+            self.value = False
+            await self.update_view(interaction, "Timed Out", discord.Color(0xdf5046))
+
+
+class ReviewView(discord.ui.View):
+    def __init__(self, cog, template_id, creator_id):
+        super().__init__(timeout=None)
+        self.cog = cog
+        self.template_id = template_id
+        self.creator_id = creator_id
+
+    @discord.ui.button(label="Accept", style=discord.ButtonStyle.green, custom_id="review:accept")
+    async def accept_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.cog.handle_review(interaction, self.template_id, self.creator_id, True)
+
+    @discord.ui.button(label="Reject", style=discord.ButtonStyle.red, custom_id="review:reject")
+    async def reject_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(RejectReasonModal(self.cog, self.template_id, self.creator_id))
+
+
+class RejectReasonModal(discord.ui.Modal):
+    def __init__(self, cog, template_id, creator_id):
+        super().__init__(title="Rejection Reason")
+        self.cog = cog
+        self.template_id = template_id
+        self.creator_id = creator_id
+        self.reason = discord.ui.TextInput(label="Reason", style=discord.TextStyle.paragraph)
+        self.add_item(self.reason)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await self.cog.handle_review(interaction, self.template_id, self.creator_id, False, self.reason.value)
+
+
+class DestructiveConfirmationViewOld(PrivateLayoutView):
+    def __init__(self, title_text: str, body_text: str, color: discord.Color = None):
+        super().__init__(None, timeout=30)
+        self.value = None
+        self.title_text = title_text
+        self.body_text = body_text
+        self.color = color
+        self.message: discord.Message = None
+        self.build_layout()
+
+    def build_layout(self):
+        self.clear_items()
+        container = discord.ui.Container(accent_color=self.color)
+        container.add_item(discord.ui.TextDisplay(f"### {self.title_text}"))
+        container.add_item(discord.ui.Separator())
+        container.add_item(discord.ui.TextDisplay(self.body_text))
+
+        is_disabled = self.value is not None
+        action_row = discord.ui.ActionRow()
+        cancel = discord.ui.Button(label="Cancel", style=discord.ButtonStyle.gray, disabled=is_disabled)
+        confirm = discord.ui.Button(label="Delete Permanently", style=discord.ButtonStyle.red, disabled=is_disabled)
+        cancel.callback = self.cancel_callback
+        confirm.callback = self.confirm_callback
+        action_row.add_item(cancel)
+        action_row.add_item(confirm)
+        container.add_item(discord.ui.Separator())
+        container.add_item(action_row)
+        self.add_item(container)
+
+    async def update_view(self, interaction: discord.Interaction, title: str, color: discord.Color):
+        self.title_text = title
+        self.body_text = f"~~{self.body_text}~~"
+        self.color = color
+        self.build_layout()
         if interaction.response.is_done():
             await interaction.edit_original_response(view=self)
         else:
@@ -666,14 +1441,10 @@ class DestructiveConfirmationView(PrivateLayoutView):
         self.value = True
         await self.update_view(interaction, "Action Confirmed", discord.Color.green())
 
-    async def on_timeout(self, interaction: discord.Interaction):
-        if self.value is None and self.message:
-            self.value = False
-            await self.update_view(interaction, "Timed Out", discord.Color(0xdf5046))
 
-class ConfirmationView(PrivateLayoutView):
+class ConfirmationViewOld(PrivateLayoutView):
     def __init__(self, title_text: str, body_text: str, color: discord.Color = None):
-        super().__init__(timeout=30)
+        super().__init__(None, timeout=30)
         self.value = None
         self.title_text = title_text
         self.body_text = body_text
@@ -708,7 +1479,6 @@ class ConfirmationView(PrivateLayoutView):
         self.body_text = f"~~{self.body_text}~~"
         self.color = color
         self.build_layout()
-
         if interaction.response.is_done():
             await interaction.edit_original_response(view=self)
         else:
@@ -723,10 +1493,6 @@ class ConfirmationView(PrivateLayoutView):
         self.value = True
         await self.update_view(interaction, "Action Confirmed", discord.Color.green())
 
-    async def on_timeout(self, interaction: discord.Interaction):
-        if self.value is None and self.message:
-            self.value = False
-            await self.update_view(interaction, "Timed Out", discord.Color(0xdf5046))
 
 class Giveaways(commands.Cog):
     def __init__(self, bot):
@@ -757,15 +1523,15 @@ class Giveaways(commands.Cog):
 
     async def init_pools(self, pool_size: int = 5):
         if self.db_pool is None:
-            self.db_pool = asyncio.Queue(maxsize = pool_size)
-            for _ in range (pool_size):
+            self.db_pool = asyncio.Queue(maxsize=pool_size)
+            for _ in range(pool_size):
                 conn = await aiosqlite.connect(
                     GDB_PATH,
                     timeout=5,
                 )
                 await conn.execute("PRAGMA busy_timeout=5000")
                 await conn.execute("PRAGMA journal_mode=WAL")
-                await conn.execute ("PRAGMA synchronous = NORMAL")
+                await conn.execute("PRAGMA synchronous = NORMAL")
                 await conn.commit()
                 await self.db_pool.put(conn)
 
@@ -819,6 +1585,37 @@ class Giveaways(commands.Cog):
                 )
             ''')
 
+            await db.execute('''
+                CREATE TABLE IF NOT EXISTS templates (
+                    template_id TEXT PRIMARY KEY,
+                    creator_id INTEGER,
+                    creation_guild_id INTEGER,
+                    prize TEXT,
+                    winners INTEGER,
+                    duration TEXT,
+                    channel_id INTEGER,
+                    host_id INTEGER,
+                    required_roles TEXT,
+                    req_behaviour INTEGER,
+                    blacklisted_roles TEXT,
+                    extra_entries TEXT,
+                    winner_role_id INTEGER,
+                    image TEXT,
+                    thumbnail TEXT,
+                    color TEXT,
+                    usage_count INTEGER DEFAULT 0,
+                    is_published INTEGER DEFAULT 0,
+                    review_status TEXT DEFAULT 'none'
+                )
+            ''')
+
+            await db.execute('''
+                CREATE TABLE IF NOT EXISTS review_config (
+                    guild_id INTEGER PRIMARY KEY,
+                    channel_id INTEGER
+                )
+            ''')
+
             await db.commit()
 
     async def populate_caches(self):
@@ -861,7 +1658,8 @@ class Giveaways(commands.Cog):
         g = self.giveaway_cache.get(giveaway_id)
         if not g:
             async with self.acquire_db() as db:
-                async with db.execute("SELECT * FROM giveaways WHERE giveaway_id = ? AND guild_id = ?", (giveaway_id, guild_id)) as cursor:
+                async with db.execute("SELECT * FROM giveaways WHERE giveaway_id = ? AND guild_id = ?",
+                                      (giveaway_id, guild_id)) as cursor:
                     rows = await cursor.fetchall()
                     if not rows: return
                     columns = [column[0] for column in cursor.description]
@@ -905,8 +1703,10 @@ class Giveaways(commands.Cog):
         if not pool:
             channel = self.bot.get_channel(g['channel_id'])
             if channel:
-                await channel.send(embed=discord.Embed(title="Giveaway Ended", description=f"Giveaway for **{g['prize']}** ended with no participants.", colour=discord.Colour.red()))
-            await self.mark_as_ended(giveaway_id, guild_id)
+                await channel.send(embed=discord.Embed(title="Giveaway Ended",
+                                                       description=f"Giveaway for **{g['prize']}** ended with no participants.",
+                                                       colour=discord.Colour.red()))
+            await self.mark_as_ended(giveaway_id, guild_id, 'participant_cache')
             return
 
         winner_count = min(len(set(pool)), g['winners_count'])
@@ -940,14 +1740,16 @@ class Giveaways(commands.Cog):
                 await msg.edit(embed=embed_embed, view=None)
 
                 mention_str = ", ".join([f"<@{w}>" for w in winners])
-                await channel.send (f"🎉 Congratulations to: {mention_str} for winning **{g['prize']}!**")
+                await channel.send(f"🎉 Congratulations to: {mention_str} for winning **{g['prize']}!**")
 
                 winner_role_id = g.get('winner_role_id')
                 if winner_role_id:
                     role = guild.get_role(winner_role_id)
+
                     async def chunk_list(lst, n):
                         for i in range(0, len(lst), n):
                             yield lst[i:i + n]
+
                     if role:
                         for chunk in chunk_list(winners, 5):
                             for member_id in chunk:
@@ -961,14 +1763,15 @@ class Giveaways(commands.Cog):
                             await asyncio.sleep(1.5)
 
             except Exception:
-                    pass
+                pass
 
     async def mark_as_ended(self, giveaway_id: int, guild_id: int, whichone: str):
         if whichone == 'giveaway_cache':
             if giveaway_id in self.giveaway_cache:
                 self.giveaway_cache[giveaway_id]['ended'] = 1
             async with self.acquire_db() as db:
-                await db.execute("UPDATE giveaways SET ended = 1 WHERE giveaway_id = ? and guild_id = ?", (giveaway_id, guild_id))
+                await db.execute("UPDATE giveaways SET ended = 1 WHERE giveaway_id = ? and guild_id = ?",
+                                 (giveaway_id, guild_id))
                 await db.commit()
         if whichone == 'participant_cache':
             if giveaway_id in self.participant_cache:
@@ -985,7 +1788,7 @@ class Giveaways(commands.Cog):
         embed.add_field(name="Winners", value=", ".join([f"<@{w}>" for w in winners]), inline=False)
         return embed
 
-    def create_giveaway_embed(self, draft: GiveawayDraft, ended: bool = False):
+    def create_giveaway_embed(self, draft: GiveawayDraft, ended: bool = False, preview_active_end: int = None):
         title_text = "GIVEAWAY ENDED" if ended else f"{draft.prize}"
         embed_color = discord.Color.red() if ended else discord.Color(0x8632e6)
 
@@ -999,11 +1802,15 @@ class Giveaways(commands.Cog):
             except (ValueError, TypeError):
                 pass
 
+        time_display = f"Duration: **{draft.duration}**"
+        if preview_active_end:
+            time_display = f"Ends: **<t:{preview_active_end}:R>**"
+
         embed = discord.Embed(
             title=f"{title_text}",
             description=f"Click the 🎉 button below to enter this giveaway!\n\n"
                         f"Winners: **{draft.winners}**\n"
-                        f"Ends: **<t:{draft.end_time}:R>**",
+                        f"{time_display}",
             colour=embed_color
         )
         if draft.host_id:
@@ -1012,7 +1819,7 @@ class Giveaways(commands.Cog):
                 description=f"Click the 🎉 button below to enter this giveaway!\n\n"
                             f"Hosted By: <@{draft.host_id}>\n"
                             f"Winners: **{draft.winners}**\n"
-                            f"Ends: **<t:{draft.end_time}:R>**",
+                            f"{time_display}",
                 colour=embed_color)
 
         if draft.required_roles:
@@ -1025,11 +1832,11 @@ class Giveaways(commands.Cog):
         if draft.thumbnail:
             embed.set_thumbnail(url=draft.thumbnail)
 
-        embed.set_footer(text="ID: [Giveaway ID will be generated and shown here once you click start.]")
+        embed.set_footer(text="ID: [Giveaway ID/Template ID]")
 
         return embed
 
-    async def save_giveaway(self, draft: GiveawayDraft, message_id: int, giveaway_id: int):
+    async def save_giveaway(self, draft: GiveawayDraft, message_id: int, giveaway_id: int, end_time: int):
         req_roles = ",".join(map(str, draft.required_roles)) if draft.required_roles else ""
         black_roles = ",".join(map(str, draft.blacklisted_roles)) if draft.blacklisted_roles else ""
         extra_roles = ",".join(map(str, draft.extra_entries)) if draft.extra_entries else ""
@@ -1041,7 +1848,7 @@ class Giveaways(commands.Cog):
             "message_id": message_id,
             "prize": draft.prize,
             "winners_count": draft.winners,
-            "end_time": draft.end_time,
+            "end_time": end_time,
             "host_id": draft.host_id,
             "required_roles": req_roles,
             "req_behaviour": draft.required_behaviour,
@@ -1064,6 +1871,188 @@ class Giveaways(commands.Cog):
                              tuple(data.values()))
             await db.commit()
 
+    async def fetch_templates(self, guild_id: int = None, user_id: int = None, mode: str = "browse"):
+        async with self.acquire_db() as db:
+            if mode == "mine":
+                query = "SELECT * FROM templates WHERE creator_id = ? ORDER BY usage_count DESC"
+                args = (user_id,)
+            else:
+                query = "SELECT * FROM templates WHERE is_published = 1 OR creation_guild_id = ?"
+                args = (guild_id,)
+
+            db.row_factory = aiosqlite.Row
+            async with db.execute(query, args) as cursor:
+                rows = await cursor.fetchall()
+
+            results = []
+            for row in rows:
+                t = dict(row)
+                if mode == "browse":
+                    creator = self.bot.get_user(t['creator_id'])
+                    t['creator_name'] = f"{creator.display_name} ({creator.name})" if creator else "Unknown"
+                    guild = self.bot.get_guild(t['creation_guild_id'])
+                    t['guild_name'] = guild.name if guild else "Unknown Guild"
+                results.append(t)
+            return results
+
+    async def save_template(self, interaction: discord.Interaction, draft: GiveawayDraft):
+        template_id = getattr(draft, 'template_id', None)
+        if not template_id:
+            template_id = generate_template_id()
+
+        req_roles = ",".join(map(str, draft.required_roles)) if draft.required_roles else ""
+        black_roles = ",".join(map(str, draft.blacklisted_roles)) if draft.blacklisted_roles else ""
+        extra_roles = ",".join(map(str, draft.extra_entries)) if draft.extra_entries else ""
+
+        data = {
+            "template_id": template_id,
+            "creator_id": interaction.user.id,
+            "creation_guild_id": interaction.guild.id,
+            "prize": draft.prize,
+            "winners": draft.winners,
+            "duration": draft.duration,
+            "channel_id": draft.channel_id,
+            "host_id": draft.host_id,
+            "required_roles": req_roles,
+            "req_behaviour": draft.required_behaviour,
+            "blacklisted_roles": black_roles,
+            "extra_entries": extra_roles,
+            "winner_role_id": draft.winner_role,
+            "image": draft.image,
+            "thumbnail": draft.thumbnail,
+            "color": draft.color
+        }
+
+        async with self.acquire_db() as db:
+            async with db.execute(
+                    "SELECT usage_count, is_published, review_status FROM templates WHERE template_id = ?",
+                    (template_id,)) as cursor:
+                existing = await cursor.fetchone()
+
+            if existing:
+                data['usage_count'] = existing[0]
+                data['is_published'] = existing[1]
+                data['review_status'] = existing[2]
+
+                if data['is_published'] == 1:
+                    await self.notify_review_channel_edit(data, interaction.guild.id)
+
+            columns = ", ".join(data.keys())
+            placeholders = ", ".join(["?"] * len(data))
+
+            await db.execute(f"INSERT OR REPLACE INTO templates ({columns}) VALUES ({placeholders})",
+                             tuple(data.values()))
+            await db.commit()
+
+        await interaction.response.send_message(f"Template saved! ID: `{template_id}`", ephemeral=True)
+
+    async def delete_template(self, template_id: str):
+        async with self.acquire_db() as db:
+            await db.execute("DELETE FROM templates WHERE template_id = ?", (template_id,))
+            await db.commit()
+
+    async def increment_usage(self, template_id: str):
+        async with self.acquire_db() as db:
+            await db.execute("UPDATE templates SET usage_count = usage_count + 1 WHERE template_id = ?", (template_id,))
+            await db.commit()
+
+    def template_to_draft(self, t: dict, current_guild_id: int) -> GiveawayDraft:
+        is_same = t['creation_guild_id'] == current_guild_id
+
+        req = [int(x) for x in t['required_roles'].split(',')] if t['required_roles'] else []
+        blk = [int(x) for x in t['blacklisted_roles'].split(',')] if t['blacklisted_roles'] else []
+        ext = [int(x) for x in t['extra_entries'].split(',')] if t['extra_entries'] else []
+
+        return GiveawayDraft(
+            guild_id=current_guild_id,
+            channel_id=t['channel_id'] if is_same else 0,
+            prize=t['prize'],
+            winners=t['winners'],
+            duration=t['duration'],
+            host_id=t['host_id'] if is_same else None,
+            required_roles=req if is_same else [],
+            required_behaviour=t['req_behaviour'],
+            blacklisted_roles=blk if is_same else [],
+            extra_entries=ext if is_same else [],
+            winner_role=t['winner_role_id'] if is_same else None,
+            image=t['image'],
+            thumbnail=t['thumbnail'],
+            color=t['color']
+        )
+
+    async def set_publish_status(self, template_id: str, publish: bool, interaction: discord.Interaction):
+        status = 1 if publish else 0
+        review = "pending" if publish else "none"
+
+        async with self.acquire_db() as db:
+            await db.execute("UPDATE templates SET is_published = ?, review_status = ? WHERE template_id = ?",
+                             (status, review, template_id))
+            await db.commit()
+
+        if publish:
+            await self.send_to_review(template_id, interaction)
+            await interaction.response.send_message("Template submitted for review!", ephemeral=True)
+        else:
+            await interaction.response.send_message("Template unpublished.", ephemeral=True)
+
+    async def send_to_review(self, template_id, interaction):
+        async with self.acquire_db() as db:
+            async with db.execute("SELECT channel_id FROM review_config LIMIT 1") as cursor:
+                row = await cursor.fetchone()
+                if not row: return
+                channel_id = row[0]
+
+        channel = self.bot.get_channel(channel_id)
+        if not channel: return
+
+        async with self.acquire_db() as db:
+            async with db.execute("SELECT * FROM templates WHERE template_id = ?", (template_id,)) as cursor:
+                row = await cursor.fetchone()
+                if not row: return
+                t = dict(zip([c[0] for c in cursor.description], row))
+
+        creator = interaction.user
+        embed = discord.Embed(title="Template Review Request", color=discord.Color.gold())
+        embed.add_field(name="ID", value=t['template_id'])
+        embed.add_field(name="Prize", value=t['prize'])
+        embed.add_field(name="Creator", value=f"{creator.name} ({creator.id})")
+        embed.add_field(name="Guild", value=f"{interaction.guild.name} ({interaction.guild.id})")
+
+        view = ReviewView(self, template_id, creator.id)
+        await channel.send(embed=embed, view=view)
+
+    async def notify_review_channel_edit(self, t, guild_id):
+        async with self.acquire_db() as db:
+            async with db.execute("SELECT channel_id FROM review_config LIMIT 1") as cursor:
+                row = await cursor.fetchone()
+                if not row: return
+                channel_id = row[0]
+        channel = self.bot.get_channel(channel_id)
+        if channel:
+            await channel.send(f"⚠️ **Template Edited:** {t['template_id']} ({t['prize']}) was edited by its creator.")
+
+    async def handle_review(self, interaction, template_id, creator_id, approved, reason=None):
+        status = "approved" if approved else "rejected"
+        async with self.acquire_db() as db:
+            await db.execute("UPDATE templates SET review_status = ? WHERE template_id = ?", (status, template_id))
+            if not approved:
+                await db.execute("UPDATE templates SET is_published = 0 WHERE template_id = ?", (template_id,))
+            await db.commit()
+
+        user = self.bot.get_user(creator_id)
+        if user:
+            embed = discord.Embed(title=f"Template {status.title()}",
+                                  color=discord.Color.green() if approved else discord.Color.red())
+            embed.description = f"Your template **{template_id}** has been {status}."
+            if not approved:
+                embed.add_field(name="Reason", value=reason or "No reason provided")
+            try:
+                await user.send(embed=embed)
+            except:
+                pass
+
+        await interaction.response.edit_message(content=f"Template {status} by {interaction.user.name}", view=None)
+
     async def giveaway_autocomplete(self, interaction: discord.Interaction, current: str, magic: bool = False):
         choices = []
 
@@ -1071,7 +2060,8 @@ class Giveaways(commands.Cog):
             data_source = sorted(self.giveaway_cache.items())
         else:
             async with self.acquire_db() as db:
-                async with db.execute("SELECT giveaway_id, prize FROM giveaways WHERE guild_id = ?", (interaction.guild_id,)) as cursor:
+                async with db.execute("SELECT giveaway_id, prize FROM giveaways WHERE guild_id = ?",
+                                      (interaction.guild_id,)) as cursor:
                     rows = await cursor.fetchall()
                     data_source = [(row[0], {"prize": row[1]}) for row in rows]
 
@@ -1089,6 +2079,21 @@ class Giveaways(commands.Cog):
         view = CreateChoose(self, interaction.user)
         await interaction.response.send_message(view=view, ephemeral=True)
 
+    @giveaway.command(name="template", description="Open the Giveaway Template Homepage.")
+    async def template_cmd(self, interaction: discord.Interaction):
+        view = TemplateHomepage(self, interaction.user)
+        await interaction.response.send_message(view=view, ephemeral=True)
+
+    @app_commands.command(name="zr", description="Set the current channel as the Template Review Channel.")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def set_review_channel(self, interaction: discord.Interaction):
+        async with self.acquire_db() as db:
+            await db.execute("INSERT OR REPLACE INTO review_config (guild_id, channel_id) VALUES (?, ?)",
+                             (interaction.guild.id, interaction.channel.id))
+            await db.commit()
+        await interaction.response.send_message(f"Set {interaction.channel.mention} as the review channel.",
+                                                ephemeral=True)
+
     @giveaway.command(name="end", description="End an active giveaway (winners are also picked and mentioned).")
     @app_commands.describe(giveaway_id="The ID of the giveaway to end.")
     async def giveaway_end(self, interaction: discord.Interaction, giveaway_id: str):
@@ -1098,12 +2103,14 @@ class Giveaways(commands.Cog):
             return await interaction.response.send_message("That is not a valid ID!", ephemeral=True)
 
         if giveaway_id not in self.giveaway_cache:
-            return await interaction.response.send_message("That giveaway is not active or doesn't exist!", ephemeral=True)
+            return await interaction.response.send_message("That giveaway is not active or doesn't exist!",
+                                                           ephemeral=True)
 
         body_content = f"Are you sure you want to end this giveaway right now and announce the winners?"
-        view = ConfirmationView("Pending Confirmation", body_content)
+        view = ConfirmationViewOld("Pending Confirmation", body_content)
         await interaction.response.send_message(view=view)
         response = await interaction.original_response()
+        view.message = response
         await view.wait()
 
         if view.value is True:
@@ -1122,17 +2129,20 @@ class Giveaways(commands.Cog):
             return await interaction.response.send_message("That is not a valid ID!", ephemeral=True)
 
         async with self.acquire_db() as db:
-            async with db.execute("SELECT prize FROM giveaways WHERE giveaway_id = ? and guild_id = ?", (giveaway_id, interaction.guild.id,)) as cursor:
+            async with db.execute("SELECT prize FROM giveaways WHERE giveaway_id = ? and guild_id = ?",
+                                  (giveaway_id, interaction.guild.id,)) as cursor:
                 row = await cursor.fetchone()
-                prize= row[0] if row else "Unknown Prize"
-            async with db.execute("SELECT channel_id, message_id, prize FROM giveaways WHERE giveaway_id = ? AND guild_id = ?", (giveaway_id, interaction.guild.id,)) as cursor:
+                prize = row[0] if row else "Unknown Prize"
+            async with db.execute(
+                    "SELECT channel_id, message_id, prize FROM giveaways WHERE giveaway_id = ? AND guild_id = ?",
+                    (giveaway_id, interaction.guild.id,)) as cursor:
                 row = await cursor.fetchone()
 
             if not row:
                 return await interaction.response.send_message("Giveaway not found.", ephemeral=True)
 
             body_content = f"Are you sure you want to delete the giveaway for **{prize}** (ID: {giveaway_id}) permanently?"
-            view = DestructiveConfirmationView("Pending Confirmation", body_content)
+            view = DestructiveConfirmationViewOld("Pending Confirmation", body_content)
             response = await interaction.response.send_message(view=view)
             view.message = await interaction.original_response()
             await view.wait()
@@ -1153,29 +2163,34 @@ class Giveaways(commands.Cog):
         return await self.giveaway_autocomplete(interaction, current, magic=False)
 
     @giveaway.command(name="reroll", description="Reroll a giveaway.")
-    @app_commands.describe(giveaway_id="The ID of the giveaway to reroll.", winners="Number of new winners to pick", preserve_winners="Keep previous winners and just add new ones?")
-    async def giveaway_reroll(self, interaction: discord.Interaction, giveaway_id: int, winners: int = 1, preserve_winners: bool = False):
+    @app_commands.describe(giveaway_id="The ID of the giveaway to reroll.", winners="Number of new winners to pick",
+                           preserve_winners="Keep previous winners and just add new ones?")
+    async def giveaway_reroll(self, interaction: discord.Interaction, giveaway_id: int, winners: int = 1,
+                              preserve_winners: bool = False):
         try:
             giveaway_id = int(giveaway_id)
         except ValueError:
             return await interaction.response.send_message("That is not a valid ID!", ephemeral=True)
 
         async with self.acquire_db() as db:
-            async with db.execute("SELECT prize, winner_role_id, channel_id, ended FROM giveaways WHERE giveaway_id = ?", (giveaway_id,)) as cursor:
+            async with db.execute(
+                    "SELECT prize, winner_role_id, channel_id, ended FROM giveaways WHERE giveaway_id = ?",
+                    (giveaway_id,)) as cursor:
                 g = await cursor.fetchone()
 
             if not g:
                 return await interaction.response.send_message("Giveaway data not found.", ephemeral=True)
 
             if g[3] == 0:
-                return await interaction.response.send_message("This giveaway hasn't ended yet! You can't reroll active giveaways.")
+                return await interaction.response.send_message(
+                    "This giveaway hasn't ended yet! You can't reroll active giveaways.")
 
         body_content = (f"Are you sure you want to:\n"
                         f"* Re-roll this giveaway to pick **{winners}** new winners\n"
                         f"* {'Preserve old winners and their roles' if preserve_winners else f'over-write **{winners}** old winners and remove their winner role'}\n"
                         f"{f'* Give **{winners}** the winner role' if g[1] else ''}")
 
-        view = ConfirmationView("Pending Confirmation", body_content)
+        view = ConfirmationViewOld("Pending Confirmation", body_content)
         response = await interaction.response.send_message(view=view)
         view.message = await interaction.original_response()
         await view.wait()
@@ -1186,21 +2201,26 @@ class Giveaways(commands.Cog):
                     yield lst[i:i + n]
 
             async with self.acquire_db() as db:
-                async with db.execute("SELECT user_id FROM giveaway_participants WHERE giveaway_id = ? AND guild_id = ?", (giveaway_id, interaction.guild_id,)) as cursor:
+                async with db.execute(
+                        "SELECT user_id FROM giveaway_participants WHERE giveaway_id = ? AND guild_id = ?",
+                        (giveaway_id, interaction.guild_id,)) as cursor:
                     rows = await cursor.fetchall()
 
                     pool = [r[0] for r in rows]
 
-                async with db.execute("SELECT user_id FROM giveaway_winners WHERE giveaway_id = ?", (giveaway_id,)) as cursor:
+                async with db.execute("SELECT user_id FROM giveaway_winners WHERE giveaway_id = ?",
+                                      (giveaway_id,)) as cursor:
                     prev_rows = await cursor.fetchall()
                     if not prev_rows:
-                        return await interaction.edit_original_response("This giveaway hasn't ended yet!", ephemeral=True)
+                        return await interaction.edit_original_response("This giveaway hasn't ended yet!",
+                                                                        ephemeral=True)
                     prev_winners = [r[0] for r in prev_rows]
 
                 eligible_pool = [uid for uid in pool if uid not in prev_winners]
 
                 if not eligible_pool:
-                    return await interaction.edit_original_response("No new participants available to pick from!", ephemeral=True)
+                    return await interaction.edit_original_response("No new participants available to pick from!",
+                                                                    ephemeral=True)
 
                 new_picks = random.sample(eligible_pool, min(len(eligible_pool), winners))
 
@@ -1210,31 +2230,37 @@ class Giveaways(commands.Cog):
                         if not role:
                             role = interaction.guild.fetch_role(g[1])
                         if not role:
-                            await interaction.followup_send("I can't find the role to remove from the previous winners!", ephemeral=True)
+                            await interaction.followup_send(
+                                "I can't find the role to remove from the previous winners!", ephemeral=True)
                         if role:
                             for chunk in chunk_list(self, prev_winners, 5):
                                 for old_uid in chunk:
-                                    member = interaction.guild.get_member(old_uid) or await interaction.guild.fetch_member(old_uid)
+                                    member = interaction.guild.get_member(
+                                        old_uid) or await interaction.guild.fetch_member(old_uid)
                                     if member and role in member.roles:
                                         try:
                                             await member.remove_roles(role, reason="Giveaway Reroll")
                                         except discord.HTTPException:
                                             pass
                                 await asyncio.sleep(1.5)
-                    await db.execute("DELETE FROM giveaway_winners WHERE giveaway_id = ? AND user_id = ?", (giveaway_id, old_uid))
+                    await db.execute("DELETE FROM giveaway_winners WHERE giveaway_id = ? AND user_id = ?",
+                                     (giveaway_id, old_uid))
 
                 for new_uid in new_picks:
-                    await db.execute("INSERT INTO giveaway_winners (giveaway_id, user_id) VALUES (?, ?)", (giveaway_id, new_uid))
+                    await db.execute("INSERT INTO giveaway_winners (giveaway_id, user_id) VALUES (?, ?)",
+                                     (giveaway_id, new_uid))
                     if g[1]:
                         role = interaction.guild.get_role(g[1])
                         if not role:
                             role = interaction.guild.fetch_role(g[1])
                         if not role:
-                            await interaction.followup_send("I can't find the role to give to the winners!", ephemeral=True)
+                            await interaction.followup_send("I can't find the role to give to the winners!",
+                                                            ephemeral=True)
                         if role:
                             for chunk in chunk_list(new_picks, 5):
                                 for new_uid in chunk:
-                                    member = interaction.guild.get_member(new_uid) or await interaction.guild.fetch_member(new_uid)
+                                    member = interaction.guild.get_member(
+                                        new_uid) or await interaction.guild.fetch_member(new_uid)
                                     if member:
                                         try:
                                             await member.add_roles(role, reason="Giveaway Winner")
@@ -1256,7 +2282,8 @@ class Giveaways(commands.Cog):
 
                 mention_str = ", ".join([f"<@{w}>" for w in new_picks])
                 mode_text = "added to the pool of winners" if preserve_winners else "selected as the new winners"
-                await channel.send (f"🎉 Congratulations to: {mention_str} for being {mode_text} for **{g[0]}**!\n\nThis giveaway has been re-rolled by {interaction.user.mention}")
+                await channel.send(
+                    f"🎉 Congratulations to: {mention_str} for being {mode_text} for **{g[0]}**!\n\nThis giveaway has been re-rolled by {interaction.user.mention}")
 
     @giveaway_reroll.autocomplete("giveaway_id")
     async def reroll_autocomplete(self, interaction: discord.Interaction, current: str):
@@ -1266,7 +2293,9 @@ class Giveaways(commands.Cog):
     async def giveaway_list(self, interaction: discord.Interaction):
         await interaction.response.defer()
         async with self.acquire_db() as db:
-            async with db.execute("SELECT prize, ended, end_time, giveaway_id FROM giveaways WHERE guild_id = ? ORDER BY giveaway_id ASC", (interaction.guild.id,)) as cursor:
+            async with db.execute(
+                    "SELECT prize, ended, end_time, giveaway_id FROM giveaways WHERE guild_id = ? ORDER BY giveaway_id ASC",
+                    (interaction.guild.id,)) as cursor:
                 rows = await cursor.fetchall()
 
         if not rows:
@@ -1287,6 +2316,7 @@ class Giveaways(commands.Cog):
             color=discord.Color(0x8632e6)
         )
         await interaction.edit_original_response(embed=embed)
+
 
 async def setup(bot):
     await bot.add_cog(Giveaways(bot))
