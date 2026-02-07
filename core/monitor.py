@@ -38,7 +38,7 @@ class ConnectionMonitor:
         while not self.bot.is_closed():
             try:
                 await self.bot.close()
-                await asyncio.sleep(5)
+                await asyncio.sleep(2)
 
                 await self.bot.login(self.token)
                 await self.bot.connect()
