@@ -7,8 +7,11 @@ import discord
 from discord.ext import commands
 from utils.log import LoggingManager
 from core.monitor import ConnectionMonitor
+from core.commands_registry import CommandRegistry
 from VERSION import bot_version
 from config import TOKEN
+import os
+import sys
 
 logger = logging.getLogger("discord")
 
@@ -23,6 +26,7 @@ class Bot(commands.Bot):
             *args, **kwargs
         )
         self.process_start_time = time.time()
+        self.registry = CommandRegistry(self)
         self.start_time = None
 
     async def setup_hook(self):
@@ -43,6 +47,9 @@ class Bot(commands.Bot):
         else:
             print("WARNING: 'cogs' directory not found.")
 
+        status = await self.registry.smart_sync()
+        print(status)
+
         for s in (signal.SIGINT, signal.SIGTERM):
             self.loop.add_signal_handler(
                 s, lambda: asyncio.create_task(self.signal_handler())
@@ -60,6 +67,12 @@ class Bot(commands.Bot):
 
         print("👋 Goodbye!")
         await self.close()
+
+    async def restart_bot(self):
+        print()
+        print("Restarting bot...")
+        await self.signal_handler()
+        os.execv(sys.executable, [sys.executable] + sys.argv)
 
     async def on_ready(self):
         if self.owner_id is None:

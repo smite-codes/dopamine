@@ -4,12 +4,15 @@ import discord
 import signal
 import asyncio
 from typing import TYPE_CHECKING
+from core.bot import Bot
+from core.commands_registry import CommandRegistry
+signal_handler = Bot.signal_handler
+restart_bot = Bot.restart_bot
 
 if TYPE_CHECKING:
     from discord.ext import commands
 
 class PrivateLayoutView(discord.ui.LayoutView):
-    """Base view that only allows the original user to interact with it."""
     def __init__(self, user: discord.User, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.user = user
@@ -29,6 +32,7 @@ class OwnerDashboard(PrivateLayoutView):
         self.bot = bot
         self.page = page
         self.items_per_page = 5
+        self.registry = CommandRegistry(self)
         self.build_layout()
 
     def build_layout(self):
@@ -88,13 +92,15 @@ class OwnerDashboard(PrivateLayoutView):
 
         container.add_item(discord.ui.Separator())
 
-        sync_btn = discord.ui.Button(label="Sync Slash", style=discord.ButtonStyle.primary)
+        sync_btn = discord.ui.Button(label="Sync Slash Global", style=discord.ButtonStyle.primary)
+        sync_local_btn = discord.ui.Button(label="Sync Slash Guild", style=discord.ButtonStyle.primary)
         reload_btn = discord.ui.Button(label="Reload All Cogs", style=discord.ButtonStyle.primary)
         shutdown_btn = discord.ui.Button(label="Shutdown", style=discord.ButtonStyle.danger)
         restart_btn = discord.ui.Button(label="Restart", style=discord.ButtonStyle.danger)
         log_btn = discord.ui.Button(label="Show Log", style=discord.ButtonStyle.secondary)
 
         sync_btn.callback = self.sync_callback
+        sync_local_btn.callback = self.sync_local_callback
         reload_btn.callback = self.reload_all_callback
         shutdown_btn.callback = self.shutdown_callback
         restart_btn.callback = self.restart_callback
@@ -102,10 +108,14 @@ class OwnerDashboard(PrivateLayoutView):
 
         action_row = discord.ui.ActionRow()
         action_row.add_item(sync_btn)
+        action_row.add_item(sync_local_btn)
+        action_row.add_item(log_btn)
+        container.add_item(action_row)
+
+        action_row = discord.ui.ActionRow()
         action_row.add_item(reload_btn)
         action_row.add_item(shutdown_btn)
         action_row.add_item(restart_btn)
-        action_row.add_item(log_btn)
 
         container.add_item(action_row)
         self.add_item(container)
@@ -154,21 +164,22 @@ class OwnerDashboard(PrivateLayoutView):
         await interaction.followup.send(status, ephemeral=True)
 
     async def sync_callback(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
-        try:
-            await self.bot.tree.sync()
-            await interaction.followup.send("Synced slash commands successfully.", ephemeral=True)
-        except Exception as e:
-            await interaction.followup.send(f"Sync failed: {e}")
+        await interaction.response.defer()
+        self.registry.force_sync(guild=None)
+        await interaction.followup_send("Synced slash commands globally successfully.", ephemeral=True)
+
+    async def sync_local_callback(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        self.registry.force_sync(guild=interaction.guild)
+        await interaction.followup_send("Synced slash commands in this guild successfully.", ephemeral=True)
+
 
     async def shutdown_callback(self, interaction: discord.Interaction):
         await interaction.response.send_message("Shutting down...", ephemeral=True)
-        from main import signal_handler
         await signal_handler()
 
     async def restart_callback(self, interaction: discord.Interaction):
         await interaction.response.send_message("Restarting process...", ephemeral=True)
-        from main import restart_bot
         await restart_bot()
 
     async def show_log_callback(self, interaction: discord.Interaction):
