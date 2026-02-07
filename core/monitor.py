@@ -54,6 +54,10 @@ class ConnectionMonitor:
                 print(f"Reconnect failed: {e}. Retrying in 30s...")
                 await asyncio.sleep(30)
 
+    @monitor_connection.before_loop
+    async def before_monitor(self):
+        await self.bot.wait_until_ready()
+
     def start(self):
         self.monitor_connection.start()
 
