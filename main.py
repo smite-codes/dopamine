@@ -11,8 +11,6 @@ from config import TOKEN, LOGGING_DEBUG_MODE
 from logging.handlers import RotatingFileHandler
 from utils.log import LoggingManager
 from core.bot import Bot
-from core.dashboard import OwnerDashboard
-from core.monitor import ConnectionMonitor
 from VERSION import bot_version
 
 if not TOKEN:
