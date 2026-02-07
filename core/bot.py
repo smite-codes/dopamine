@@ -6,7 +6,6 @@ import logging
 import discord
 from discord.ext import commands
 from utils.log import LoggingManager
-from core.monitor import ConnectionMonitor
 from core.commands_registry import CommandRegistry
 from VERSION import bot_version
 from config import TOKEN
@@ -31,7 +30,6 @@ class Bot(commands.Bot):
 
     async def setup_hook(self):
         self.logger = LoggingManager()
-        self.monitor = ConnectionMonitor(self, TOKEN)
         self.monitor.monitor_connection.start()
 
         cogs_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "cogs")
