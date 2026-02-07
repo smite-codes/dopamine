@@ -9,9 +9,7 @@ import discord
 from discord.ext import commands, tasks
 from config import TOKEN, LOGGING_DEBUG_MODE
 from logging.handlers import RotatingFileHandler
-from utils.log import LoggingManager
 from core.bot import Bot
-from VERSION import bot_version
 
 if not TOKEN:
     raise SystemExit("ERROR: Set DISCORD_TOKEN in a .env in root folder.")
